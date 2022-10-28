@@ -67,18 +67,13 @@ class VDI(AlignedStream):
 
 
 class Vbox:
-    def __init__(self, fh):
-        self.fh = fh
-        self.xml = ElementTree.fromstring(fh.read())
 
-        self.machine = list(self.xml)[0]
-        self.registry = next((elem for elem in self.machine if "MediaRegistry" in elem.tag))
+    VBOX_XML_NAMESPACE = "{http://www.virtualbox.org/}"
+
+    def __init__(self, fh):
+        xml = ElementTree.fromstring(fh.read())
+        self._disks = xml.findall(f".//{self.VBOX_XML_NAMESPACE}HardDisk[@location][@format='VDI'][@type='Normal']")
 
     def disks(self):
-        for hdd_elem in next((elem for elem in self.registry if "HardDisks" in elem.tag)):
+        for hdd_elem in self._disks:
             yield hdd_elem.attrib["location"]
-
-    def snapshots(self):
-        for hdd_elem in next((elem for elem in self.registry if "HardDisks" in elem.tag)):
-            for snap_elem in hdd_elem:
-                yield hdd_elem.attrib["location"], snap_elem.attrib["location"]
