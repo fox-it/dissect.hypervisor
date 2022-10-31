@@ -74,5 +74,5 @@ class Vbox:
         self.xml = ElementTree.fromstring(fh.read())
 
     def disks(self):
-        for hdd_elem in self._disks:
+        for hdd_elem in self.xml.findall(f".//{self.VBOX_XML_NAMESPACE}HardDisk[@location][@format='VDI'][@type='Normal']"):
             yield hdd_elem.attrib["location"]
