@@ -71,8 +71,7 @@ class Vbox:
     VBOX_XML_NAMESPACE = "{http://www.virtualbox.org/}"
 
     def __init__(self, fh):
-        xml = ElementTree.fromstring(fh.read())
-        self._disks = xml.findall(f".//{self.VBOX_XML_NAMESPACE}HardDisk[@location][@format='VDI'][@type='Normal']")
+        self.xml = ElementTree.fromstring(fh.read())
 
     def disks(self):
         for hdd_elem in self._disks:
