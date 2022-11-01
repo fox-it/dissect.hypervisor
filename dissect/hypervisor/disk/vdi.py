@@ -1,15 +1,8 @@
 import array
 
-from xml.etree import ElementTree
-
 from dissect.util.stream import AlignedStream
 
-from dissect.hypervisor.disk.c_vdi import (
-    c_vdi,
-    SPARSE,
-    UNALLOCATED,
-    VDI_SIGNATURE,
-)
+from dissect.hypervisor.disk.c_vdi import SPARSE, UNALLOCATED, VDI_SIGNATURE, c_vdi
 from dissect.hypervisor.exceptions import Error
 
 
@@ -64,21 +57,3 @@ class VDI(AlignedStream):
             block_idx += 1
 
         return b"".join(bytes_read)
-
-
-class Vbox:
-    def __init__(self, fh):
-        self.fh = fh
-        self.xml = ElementTree.fromstring(fh.read())
-
-        self.machine = list(self.xml)[0]
-        self.registry = next((elem for elem in self.machine if "MediaRegistry" in elem.tag))
-
-    def disks(self):
-        for hdd_elem in next((elem for elem in self.registry if "HardDisks" in elem.tag)):
-            yield hdd_elem.attrib["location"]
-
-    def snapshots(self):
-        for hdd_elem in next((elem for elem in self.registry if "HardDisks" in elem.tag)):
-            for snap_elem in hdd_elem:
-                yield hdd_elem.attrib["location"], snap_elem.attrib["location"]
