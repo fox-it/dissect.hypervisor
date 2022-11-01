@@ -1,6 +1,6 @@
 from io import StringIO
 
-from dissect.hypervisor.disk.vdi import Vbox
+from dissect.hypervisor.descriptor.vbox import VBox
 
 
 def test_vbox():
@@ -19,5 +19,5 @@ def test_vbox():
     """
 
     with StringIO(xml.strip()) as fh:
-        vbox = Vbox(fh)
+        vbox = VBox(fh)
         assert next(vbox.disks()) == "os2warp4.vdi"

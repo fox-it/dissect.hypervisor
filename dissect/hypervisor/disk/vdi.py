@@ -1,15 +1,8 @@
 import array
 
-from xml.etree import ElementTree
-
 from dissect.util.stream import AlignedStream
 
-from dissect.hypervisor.disk.c_vdi import (
-    c_vdi,
-    SPARSE,
-    UNALLOCATED,
-    VDI_SIGNATURE,
-)
+from dissect.hypervisor.disk.c_vdi import SPARSE, UNALLOCATED, VDI_SIGNATURE, c_vdi
 from dissect.hypervisor.exceptions import Error
 
 
@@ -64,15 +57,3 @@ class VDI(AlignedStream):
             block_idx += 1
 
         return b"".join(bytes_read)
-
-
-class Vbox:
-
-    VBOX_XML_NAMESPACE = "{http://www.virtualbox.org/}"
-
-    def __init__(self, fh):
-        self._xml = ElementTree.fromstring(fh.read())
-
-    def disks(self):
-        for hdd_elem in self._xml.findall(f".//{self.VBOX_XML_NAMESPACE}HardDisk[@location][@format='VDI'][@type='Normal']"):
-            yield hdd_elem.attrib["location"]
