@@ -5,7 +5,7 @@ import pytest
 from dissect.hypervisor.util.envelope import Envelope, KeyStore, HAS_PYCRYPTODOME, HAS_PYSTANDALONE
 
 
-def test_keystore(keystore):
+def test_envelope_keystore(keystore):
     store = KeyStore.from_text(keystore.read())
 
     assert store.store[".encoding"] == "UTF-8"
@@ -35,7 +35,7 @@ def test_envelope(envelope):
 
 
 @pytest.mark.skipif((not HAS_PYCRYPTODOME and not HAS_PYSTANDALONE), reason="No crypto module available")
-def test_decrypt(envelope, keystore):
+def test_envelope_decrypt(envelope, keystore):
     ev = Envelope(envelope)
     store = KeyStore.from_text(keystore.read())
 
