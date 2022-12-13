@@ -34,6 +34,16 @@ def vmrs():
 
 
 @pytest.fixture
+def fixed_vhd():
+    yield from open_file_gz("data/fixed.vhd.gz")
+
+
+@pytest.fixture
+def dynamic_vhd():
+    yield from open_file_gz("data/dynamic.vhd.gz")
+
+
+@pytest.fixture
 def fixed_vhdx():
     yield from open_file_gz("data/fixed.vhdx.gz")
 

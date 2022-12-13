@@ -2,7 +2,7 @@ from dissect.hypervisor.disk.vmdk import VMDK
 from dissect.hypervisor.disk.c_vmdk import c_vmdk
 
 
-def test_sesparse(sesparse_vmdk):
+def test_vmdk_sesparse(sesparse_vmdk):
     vmdk = VMDK(sesparse_vmdk)
 
     disk = vmdk.disks[0]

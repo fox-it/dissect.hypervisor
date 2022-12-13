@@ -4,7 +4,7 @@ from functools import lru_cache
 
 from dissect.util.stream import AlignedStream
 
-from dissect.hypervisor.disk.c_vhd import c_vhd, SECTOR_SIZE
+from dissect.hypervisor.disk.c_vhd import SECTOR_SIZE, c_vhd
 
 
 def read_footer(fh):
@@ -43,7 +43,6 @@ class Disk:
         self.fh = fh
         self.footer = footer if footer else read_footer(fh)
         self.size = self.footer.current_size
-        self.block_size = None
 
     def read_sectors(self, sector, count):
         raise NotImplementedError()
@@ -68,24 +67,25 @@ class DynamicDisk(Disk):
         self._sector_bitmap_size = ((self._sectors_per_block // 8) + SECTOR_SIZE - 1) // SECTOR_SIZE
 
     def read_sectors(self, sector, count):
-        sectors_read = []
+        result = []
         while count > 0:
-            read_count = min(count, self._sectors_per_block)
+            block, offset = divmod(sector, self._sectors_per_block)
+            block_remaining = self._sectors_per_block - offset
 
-            block, remaining = divmod(sector, self._sectors_per_block)
+            read_count = min(count, block_remaining)
+
             sector_offset = self.bat[block]
-
             if sector_offset:
-                self.fh.seek((sector_offset + self._sector_bitmap_size + remaining) * SECTOR_SIZE)
-                sectors_read.append(self.fh.read(read_count * SECTOR_SIZE))
+                self.fh.seek((sector_offset + self._sector_bitmap_size + offset) * SECTOR_SIZE)
+                result.append(self.fh.read(read_count * SECTOR_SIZE))
             else:
                 # Sparse
-                sectors_read.append((b"\x00" * SECTOR_SIZE) * read_count)
+                result.append((b"\x00" * SECTOR_SIZE) * read_count)
 
             sector += read_count
             count -= read_count
 
-        return b"".join(sectors_read)
+        return b"".join(result)
 
 
 class BlockAllocationTable:

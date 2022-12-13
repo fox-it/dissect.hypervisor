@@ -1,7 +1,7 @@
 from dissect.hypervisor.descriptor.hyperv import HyperVFile
 
 
-def test_vmcx(vmcx):
+def test_hyperv_vmcx(vmcx):
     hf = HyperVFile(vmcx)
 
     assert hf.header is hf.headers[0]
@@ -18,7 +18,7 @@ def test_vmcx(vmcx):
     assert len(obj["configuration"]["settings"].keys()) == 6
 
 
-def test_vmrs(vmrs):
+def test_hyperv_vmrs(vmrs):
     hf = HyperVFile(vmrs)
 
     assert hf.header is hf.headers[0]
