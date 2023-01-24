@@ -114,7 +114,11 @@ class VHDX(AlignedStream):
                     sectors_read.append(self.parent.read_sectors(sector, read_count))
                 else:
                     sectors_read.append(b"\x00" * read_size)
-            elif bat_entry.state in (c_vhdx.PAYLOAD_BLOCK_UNDEFINED, c_vhdx.PAYLOAD_BLOCK_UNMAPPED):
+            elif bat_entry.state in (
+                c_vhdx.PAYLOAD_BLOCK_UNDEFINED,
+                c_vhdx.PAYLOAD_BLOCK_ZERO,
+                c_vhdx.PAYLOAD_BLOCK_UNMAPPED,
+            ):
                 # The block is not allocated at all
                 # Keep it empty
                 sectors_read.append(b"\x00" * read_size)
