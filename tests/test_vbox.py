@@ -4,7 +4,6 @@ from dissect.hypervisor.descriptor.vbox import VBox
 
 
 def test_vbox():
-
     xml = """
     <?xml version="1.0"?>
     <VirtualBox xmlns="http://www.virtualbox.org/">

@@ -2,7 +2,6 @@ from xml.etree import ElementTree
 
 
 class VBox:
-
     VBOX_XML_NAMESPACE = "{http://www.virtualbox.org/}"
 
     def __init__(self, fh):
