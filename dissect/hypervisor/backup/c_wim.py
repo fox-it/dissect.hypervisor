@@ -1,6 +1,5 @@
 from dissect import cstruct
 
-
 wim_def = """
 typedef char[16] GUID;
 typedef uint64 LARGE_INTEGER;

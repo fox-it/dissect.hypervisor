@@ -10,7 +10,6 @@ import re
 from typing import Dict, List
 from urllib.parse import unquote
 
-
 try:
     import _pystandalone
 

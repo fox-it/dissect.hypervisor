@@ -1,6 +1,5 @@
 from dissect import cstruct
 
-
 vhd_def = """
 struct footer {
     char            cookie[8];

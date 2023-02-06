@@ -1,6 +1,5 @@
 from dissect import cstruct
 
-
 qcow2_def = """
 #define MIN_CLUSTER_BITS 9
 #define MAX_CLUSTER_BITS 21

@@ -2,7 +2,12 @@ import hashlib
 
 import pytest
 
-from dissect.hypervisor.util.envelope import Envelope, KeyStore, HAS_PYCRYPTODOME, HAS_PYSTANDALONE
+from dissect.hypervisor.util.envelope import (
+    HAS_PYCRYPTODOME,
+    HAS_PYSTANDALONE,
+    Envelope,
+    KeyStore,
+)
 
 
 def test_envelope_keystore(keystore):

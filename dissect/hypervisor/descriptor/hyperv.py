@@ -5,7 +5,12 @@ import struct
 
 from dissect.util.stream import RangeStream
 
-from dissect.hypervisor.descriptor.c_hyperv import KeyDataFlag, KeyDataType, ObjectEntryType, c_hyperv
+from dissect.hypervisor.descriptor.c_hyperv import (
+    KeyDataFlag,
+    KeyDataType,
+    ObjectEntryType,
+    c_hyperv,
+)
 from dissect.hypervisor.exceptions import InvalidSignature
 
 

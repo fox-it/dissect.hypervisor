@@ -1,6 +1,5 @@
 from dissect import cstruct
 
-
 hyperv_def = """
 /* ======== File header ======== */
 

@@ -1,6 +1,5 @@
 from dissect import cstruct
 
-
 # https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Storage/VDICore.h
 # https://forums.virtualbox.org/viewtopic.php?t=8046
 # 0000      3C 3C 3C 20 53 75 6E 20 78 56 4D 20 56 69 72 74    <<< Sun xVM Virt

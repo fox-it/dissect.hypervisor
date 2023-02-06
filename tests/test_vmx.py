@@ -1,6 +1,6 @@
 import pytest
 
-from dissect.hypervisor.descriptor.vmx import VMX, HAS_PYCRYPTODOME, HAS_PYSTANDALONE
+from dissect.hypervisor.descriptor.vmx import HAS_PYCRYPTODOME, HAS_PYSTANDALONE, VMX
 
 
 def test_vmx():
