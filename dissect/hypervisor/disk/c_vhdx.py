@@ -2,7 +2,6 @@ from uuid import UUID
 
 from dissect import cstruct
 
-
 vhdx_def = """
 #define PAYLOAD_BLOCK_NOT_PRESENT           0
 #define PAYLOAD_BLOCK_UNDEFINED             1

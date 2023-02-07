@@ -11,7 +11,7 @@ from uuid import UUID
 from dissect.util import ts
 from dissect.util.stream import AlignedStream
 
-from dissect.hypervisor.backup.c_vma import c_vma, VMA_MAGIC, VMA_EXTENT_MAGIC
+from dissect.hypervisor.backup.c_vma import VMA_EXTENT_MAGIC, VMA_MAGIC, c_vma
 from dissect.hypervisor.exceptions import InvalidHeaderError
 
 

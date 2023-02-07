@@ -28,7 +28,6 @@ except ImportError:
 from dissect import cstruct
 from dissect.util.stream import RangeStream
 
-
 c_def = """
 struct EnvelopeFileHeader {
     char    magic[21];

@@ -2,7 +2,7 @@ from uuid import UUID
 
 import pytest
 
-from dissect.hypervisor.disk.vhdx import VHDX, c_vhdx, _iter_partial_runs
+from dissect.hypervisor.disk.vhdx import VHDX, _iter_partial_runs, c_vhdx
 
 
 def test_vhdx_fixed(fixed_vhdx):

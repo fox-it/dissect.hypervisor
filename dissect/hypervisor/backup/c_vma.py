@@ -1,6 +1,5 @@
 from dissect import cstruct
 
-
 vma_def = """
 #define VMA_BLOCK_BITS          12
 #define VMA_BLOCK_SIZE          (1 << VMA_BLOCK_BITS)

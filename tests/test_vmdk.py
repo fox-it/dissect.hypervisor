@@ -1,5 +1,5 @@
-from dissect.hypervisor.disk.vmdk import VMDK
 from dissect.hypervisor.disk.c_vmdk import c_vmdk
+from dissect.hypervisor.disk.vmdk import VMDK
 
 
 def test_vmdk_sesparse(sesparse_vmdk):

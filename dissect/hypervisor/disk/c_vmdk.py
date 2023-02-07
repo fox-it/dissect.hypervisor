@@ -1,6 +1,6 @@
 import struct
-from dissect import cstruct
 
+from dissect import cstruct
 
 vmdk_def = """
 typedef struct {

@@ -3,12 +3,19 @@ import logging
 import sys
 from pathlib import Path
 
-from dissect.hypervisor.backup.vma import VMA, _iter_mask
 from dissect.hypervisor.backup.c_vma import c_vma
+from dissect.hypervisor.backup.vma import VMA, _iter_mask
 
 try:
     from rich.logging import RichHandler
-    from rich.progress import BarColumn, DownloadColumn, Progress, TextColumn, TimeRemainingColumn, TransferSpeedColumn
+    from rich.progress import (
+        BarColumn,
+        DownloadColumn,
+        Progress,
+        TextColumn,
+        TimeRemainingColumn,
+        TransferSpeedColumn,
+    )
 
     progress = Progress(
         TextColumn("[bold blue]{task.fields[filename]}", justify="right"),

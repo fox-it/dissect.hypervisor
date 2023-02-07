@@ -1,4 +1,4 @@
-from dissect.hypervisor.disk.vhd import VHD, FixedDisk, DynamicDisk
+from dissect.hypervisor.disk.vhd import VHD, DynamicDisk, FixedDisk
 
 
 def test_vhd_fixed(fixed_vhd):

@@ -1,4 +1,4 @@
-from dissect.hypervisor.backup.c_wim import c_wim, WIM_IMAGE_TAG
+from dissect.hypervisor.backup.c_wim import WIM_IMAGE_TAG, c_wim
 from dissect.hypervisor.exceptions import InvalidHeaderError
 
 
