@@ -1,8 +1,39 @@
 [build-system]
-requires = ["setuptools>=43.0.0", "wheel", "setuptools_scm[toml]>=3.4.1"]
+requires = ["setuptools>=65.5.0", "setuptools_scm[toml]>=6.4.0"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools_scm]
+[project]
+name = "dissect.hypervisor"
+description = "A Dissect module implementing parsers for various hypervisor disk, backup and configuration files"
+readme = "README.md"
+requires-python = "~=3.9"
+license.text = "Affero General Public License v3"
+authors = [
+  {name = "Dissect Team", email = "dissect@fox-it.com"}
+]
+classifiers = [
+  "Programming Language :: Python :: 3",
+]
+dependencies = [
+    "dissect.cstruct>=3.0.dev,<4.0.dev",
+    "dissect.util>=3.0.dev,<4.0.dev",
+]
+dynamic = ["version"]
+
+[project.urls]
+homepage = "https://dissect.tools"
+documentation = "https://docs.dissect.tools/en/latest/projects/dissect.hypervisor"
+repository = "https://github.com/fox-it/dissect.hypervisor"
+
+[project.optional-dependencies]
+full = [
+    "pycryptodome",
+    "rich",
+]
+
+[project.scripts]
+vma-extract = "dissect.hypervisor.tools.vma:main"
+envelope-decrypt = "dissect.hypervisor.tools.envelope:main"
 
 [tool.black]
 line-length = 120
@@ -11,3 +42,11 @@ line-length = 120
 profile = "black"
 known_first_party = ["dissect.hypervisor"]
 known_third_party = ["dissect"]
+
+[tool.setuptools]
+license-files = ["LICENSE", "COPYRIGHT"]
+
+[tool.setuptools.packages.find]
+include = ["dissect.*"]
+
+[tool.setuptools_scm]
