@@ -64,6 +64,21 @@ def sesparse_vmdk():
 
 
 @pytest.fixture
+def plain_hdd():
+    yield absolute_path("data/plain.hdd")
+
+
+@pytest.fixture
+def expanding_hdd():
+    yield absolute_path("data/expanding.hdd")
+
+
+@pytest.fixture
+def split_hdd():
+    yield absolute_path("data/split.hdd")
+
+
+@pytest.fixture
 def simple_vma():
     yield from open_file_gz("data/test.vma.gz")
 
