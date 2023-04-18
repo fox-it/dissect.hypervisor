@@ -1,4 +1,7 @@
-# Reference: https://src.openvz.org/projects/OVZ/repos/ploop/browse/include/ploop1_image.h
+# References:
+# - https://src.openvz.org/projects/OVZ/repos/ploop/browse/include/ploop1_image.h
+# - https://github.com/qemu/qemu/blob/master/docs/interop/parallels.txt
+
 
 from dissect import cstruct
 

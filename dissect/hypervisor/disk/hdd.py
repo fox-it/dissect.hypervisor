@@ -118,6 +118,9 @@ class HDD:
 class Descriptor:
     """Helper class for working with ``DiskDescriptor.xml``.
 
+    References:
+        - https://github.com/qemu/qemu/blob/master/docs/interop/prl-xml.txt
+
     Args:
         path: The path to ``DiskDescriptor.xml``.
     """
