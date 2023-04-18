@@ -1,9 +1,8 @@
+# Reference: https://src.openvz.org/projects/OVZ/repos/ploop/browse/include/ploop1_image.h
+
 from dissect import cstruct
 
 hdd_def = """
-/* Compressed disk (version 1) */
-#define PRL_IMAGE_COMPRESSED            2
-
 /* Compressed disk v1 signature */
 #define SIGNATURE_STRUCTURED_DISK_V1    b"WithoutFreeSpace"
 
@@ -13,23 +12,7 @@ hdd_def = """
 /* Sign that the disk is in "using" state */
 #define SIGNATURE_DISK_IN_USE           0x746F6E59
 
-/**
- * Compressed disk image flags
- */
-#define CIF_NoFlags                     0x00000000  /* No any flags */
-#define CIF_Empty                       0x00000001  /* No any data was written */
-#define CIF_FmtVersionConvert           0x00000002  /* Version Convert in progree  */
-#define CIF_FlagsMask                   (CIF_Empty | CIF_FmtVersionConvert)
-#define CIF_Invalid                     0xFFFFFFFF  /* Invalid flag */
-
 #define SECTOR_LOG                      9
-#define DEF_CLUSTER_LOG                 11          /* 1M cluster-block */
-#define DEF_CLUSTER                     (1 << (DEF_CLUSTER_LOG + SECTOR_LOG))
-
-/* Helpers to generate PVD-header based on requested bdsize */
-
-#define DEFAULT_HEADS_COUNT             16
-#define DEFAULT_SECTORS_COUNT           63
 #define SECTOR_SIZE                     (1 << SECTOR_LOG)
 
 struct pvd_header {
