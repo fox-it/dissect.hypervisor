@@ -19,6 +19,7 @@ from dissect.hypervisor.disk.c_hdd import SECTOR_SIZE, c_hdd
 from dissect.hypervisor.exceptions import InvalidHeaderError
 
 DEFAULT_TOP_GUID = UUID("{5fbaabe3-6958-40ff-92a7-860e329aab41}")
+NULL_GUID = UUID("00000000-0000-0000-0000-000000000000")
 
 
 class HDD:
@@ -89,7 +90,7 @@ class HDD:
         if guid is None:
             guid = self.descriptor.snapshots.top_guid or DEFAULT_TOP_GUID
 
-        chain = self.descriptor.get_chain(guid)
+        chain = self.descriptor.get_snapshot_chain(guid)
 
         streams = []
         for storage in self.descriptor.storage_data.storages:
@@ -124,7 +125,7 @@ class Descriptor:
         self.storage_data = StorageData.from_xml(self.xml.find("StorageData"))
         self.snapshots = Snapshots.from_xml(self.xml.find("Snapshots"))
 
-    def get_chain(self, guid: UUID) -> list[UUID]:
+    def get_snapshot_chain(self, guid: UUID) -> list[UUID]:
         """Return the snapshot chain for a given snapshot GUID.
 
         Args:
@@ -133,7 +134,7 @@ class Descriptor:
         shot = self.snapshots.find_shot(guid)
 
         chain = [shot.guid]
-        while shot.parent != UUID("00000000-0000-0000-0000-000000000000"):
+        while shot.parent != NULL_GUID:
             shot = self.snapshots.find_shot(shot.parent)
             chain.append(shot.guid)
 
@@ -141,28 +142,35 @@ class Descriptor:
 
 
 @dataclass
-class StorageData:
+class XMLEntry:
+    @classmethod
+    def from_xml(cls, element: Element) -> XMLEntry:
+        if element.tag != cls.__name__:
+            raise ValueError(f"Invalid {cls.__name__} XML element")
+        return cls._from_xml(element)
+
+    @classmethod
+    def _from_xml(cls, element: Element) -> XMLEntry:
+        raise NotImplementedError()
+
+
+@dataclass
+class StorageData(XMLEntry):
     storages: list[Storage]
 
     @classmethod
-    def from_xml(cls, element: Element) -> StorageData:
-        if element.tag != "StorageData":
-            raise ValueError("Invalid StorageData XML element")
-
+    def _from_xml(cls, element: Element) -> StorageData:
         return cls(list(map(Storage.from_xml, element.iterfind("Storage"))))
 
 
 @dataclass
-class Storage:
+class Storage(XMLEntry):
     start: int
     end: int
     images: list[Image]
 
     @classmethod
-    def from_xml(cls, element: Element) -> Storage:
-        if element.tag != "Storage":
-            raise ValueError("Invalid Storage XML element")
-
+    def _from_xml(cls, element: Element) -> Storage:
         start = int(element.find("Start").text)
         end = int(element.find("End").text)
         images = list(map(Image.from_xml, element.iterfind("Image")))
@@ -186,16 +194,13 @@ class Storage:
 
 
 @dataclass
-class Image:
+class Image(XMLEntry):
     guid: UUID
     type: str
     file: str
 
     @classmethod
-    def from_xml(cls, element: Element) -> Image:
-        if element.tag != "Image":
-            raise ValueError("Invalid Image XML element")
-
+    def _from_xml(cls, element: Element) -> Image:
         return cls(
             UUID(element.find("GUID").text),
             element.find("Type").text,
@@ -204,15 +209,12 @@ class Image:
 
 
 @dataclass
-class Snapshots:
+class Snapshots(XMLEntry):
     top_guid: Optional[UUID]
     shots: list[Shot]
 
     @classmethod
-    def from_xml(cls, element: Element) -> Snapshots:
-        if element.tag != "Snapshots":
-            raise ValueError("Invalid Snapshots XML element")
-
+    def _from_xml(cls, element: Element) -> Snapshots:
         top_guid = element.find("TopGUID")
         if top_guid:
             top_guid = UUID(top_guid.text)
@@ -237,15 +239,12 @@ class Snapshots:
 
 
 @dataclass
-class Shot:
+class Shot(XMLEntry):
     guid: UUID
     parent: UUID
 
     @classmethod
-    def from_xml(cls, element: Element) -> Shot:
-        if element.tag != "Shot":
-            raise ValueError("Invalid Shot XML element")
-
+    def _from_xml(cls, element: Element) -> Shot:
         return cls(
             UUID(element.find("GUID").text),
             UUID(element.find("ParentGUID").text),
@@ -383,7 +382,7 @@ class HDS(AlignedStream):
                 # First iteration
                 run_offset = read_offset
                 run_size = read_size
-            elif read_offset == run_offset + run_size or (run_offset, read_offset) == (0, 0):
+            elif (read_offset == run_offset + run_size) or (run_offset, read_offset) == (0, 0):
                 # Consecutive (sparse) clusters
                 run_size += read_size
             else:
