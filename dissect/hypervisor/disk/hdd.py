@@ -55,18 +55,22 @@ class HDD:
                 # If the absolute path does not exist, we're probably dealing with a HDD
                 # that's been copied or moved (e.g., uploaded or copied as evidence)
                 # Try a couple of common patterns to see if we can locate the file
+                #
+                # Example variables:
+                # root = /some/path/example.pvm/example.hdd/
+                # path = /other/path/absolute.pvm/absolute.hdd/absolute.ext
 
                 # File is in same HDD directory
-                # root/example.pvm/example.hdd/absolute.ext
+                # candidate_path = /some/path/example.pvm/example.hdd/absolute.ext
                 candidate_path = root / filename
                 if not candidate_path.exists():
                     # File is in a separate HDD directory in parent (VM) directory
-                    # root/example.pvm/absolute.hdd/absolute.ext
+                    # candidate_path = /some/path/example.pvm/absolute.hdd/absolute.ext
                     candidate_path = root.parent / path.parent.name / filename
 
                 if not candidate_path.exists():
                     # File is in .pvm directory in parent of parent directory (linked clones)
-                    # root/absolute.pvm/absolute.hdd/absolute.ext
+                    # candidate_path = /some/path/absolute.pvm/absolute.hdd/absolute.ext
                     candidate_path = root.parent.parent / path.parent.parent.name / path.parent.name / filename
 
                 path = candidate_path
