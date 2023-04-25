@@ -147,7 +147,8 @@ class Extent:
         # There are at most 59 entries, so safe to parse ahead of use
         self._min = {}
         self._max = {}
-        self.blocks = defaultdict(list)
+        self.devices = set()
+        self.blocks = []
         for block_info in self.header.blockinfo:
             cluster_num = block_info & 0xFFFFFFFF
             dev_id = (block_info >> 32) & 0xFF
@@ -156,7 +157,8 @@ class Extent:
             if dev_id == 0:
                 continue
 
-            if dev_id not in self._min:
+            if dev_id not in self.devices:
+                self.devices.add(dev_id)
                 self._min[dev_id] = cluster_num
                 self._max[dev_id] = cluster_num
             elif cluster_num < self._min[dev_id]:
@@ -164,7 +166,7 @@ class Extent:
             elif cluster_num > self._max[dev_id]:
                 self._max[dev_id] = cluster_num
 
-            self.blocks[dev_id].append((dev_id, cluster_num, mask))
+            self.blocks.append((dev_id, cluster_num, mask))
 
     def __repr__(self):
         return f"<Extent offset=0x{self.offset:x} size=0x{self.size:x}>"
@@ -206,30 +208,31 @@ class DeviceDataStream(AlignedStream):
         return b"".join(result)
 
 
-def _iter_clusters(vma, dev_id, cluster, count):
+def _iter_clusters(vma, device, cluster, count):
     # Find clusters and starting offsets in all extents
     temp = {}
     end = cluster + count
 
     for extent in vma.extents():
-        if dev_id not in extent.blocks:
+        if device not in extent.devices:
             continue
 
-        if end < extent._min[dev_id] or cluster > extent._max[dev_id]:
+        if end < extent._min[device] or cluster > extent._max[device]:
             continue
 
         block_offset = extent.data_offset
-        for _, cluster_num, mask in extent.blocks[dev_id]:
-            if cluster_num == cluster:
-                yield cluster_num, mask, block_offset
-                cluster += 1
-
-                while cluster in temp:
-                    yield temp[cluster]
-                    del temp[cluster]
+        for dev_id, cluster_num, mask in extent.blocks:
+            if dev_id == device:
+                if cluster_num == cluster:
+                    yield cluster_num, mask, block_offset
                     cluster += 1
-            elif cluster < cluster_num <= end:
-                temp[cluster_num] = (cluster_num, mask, block_offset)
+
+                    while cluster in temp:
+                        yield temp[cluster]
+                        del temp[cluster]
+                        cluster += 1
+                elif cluster < cluster_num <= end:
+                    temp[cluster_num] = (cluster_num, mask, block_offset)
 
             if mask == 0xFFFF:
                 block_offset += 16 * c_vma.VMA_BLOCK_SIZE
