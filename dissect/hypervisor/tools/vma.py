@@ -94,7 +94,7 @@ def setup_logging(logger, verbosity):
 def main():
     parser = argparse.ArgumentParser(description="VMA extractor")
     parser.add_argument("input", type=Path, help="path to vma file")
-    parser.add_argument("-o", "--output", type=Path, help="path to output directory")
+    parser.add_argument("-o", "--output", type=Path, required=True, help="path to output directory")
     parser.add_argument("-v", "--verbose", action="count", default=3, help="increase output verbosity")
     args = parser.parse_args()
 
