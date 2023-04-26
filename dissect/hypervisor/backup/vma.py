@@ -67,6 +67,8 @@ class VMA:
 
             self._devices[dev_id] = Device(self, dev_id, self.blob_string(dev_info.devname_ptr), dev_info.size)
 
+        self.extent = @lru_cache(65536)(self.extent)
+
     @property
     def creation_time(self):
         return ts.from_unix(self.header.ctime)
@@ -91,7 +93,6 @@ class VMA:
     def devices(self):
         return list(self._devices.values())
 
-    @lru_cache(65536)
     def _extent(self, offset):
         return Extent(self.fh, offset)
 
