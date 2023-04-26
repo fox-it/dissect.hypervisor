@@ -4,7 +4,6 @@
 
 import hashlib
 import struct
-from collections import defaultdict
 from functools import lru_cache
 from uuid import UUID
 
@@ -147,7 +146,6 @@ class Extent:
         # There are at most 59 entries, so safe to parse ahead of use
         self._min = {}
         self._max = {}
-        self.devices = set()
         self.blocks = []
         for block_info in self.header.blockinfo:
             cluster_num = block_info & 0xFFFFFFFF
@@ -157,8 +155,7 @@ class Extent:
             if dev_id == 0:
                 continue
 
-            if dev_id not in self.devices:
-                self.devices.add(dev_id)
+            if dev_id not in self._min:
                 self._min[dev_id] = cluster_num
                 self._max[dev_id] = cluster_num
             elif cluster_num < self._min[dev_id]:
@@ -214,7 +211,7 @@ def _iter_clusters(vma, device, cluster, count):
     end = cluster + count
 
     for extent in vma.extents():
-        if device not in extent.devices:
+        if device not in extent._min:
             continue
 
         if end < extent._min[device] or cluster > extent._max[device]:
