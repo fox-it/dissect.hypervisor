@@ -67,7 +67,7 @@ class VMA:
 
             self._devices[dev_id] = Device(self, dev_id, self.blob_string(dev_info.devname_ptr), dev_info.size)
 
-        self.extent = @lru_cache(65536)(self.extent)
+        self._extent = @lru_cache(65536)(self._extent)
 
     @property
     def creation_time(self):
