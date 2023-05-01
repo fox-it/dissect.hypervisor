@@ -4,6 +4,7 @@
 
 import hashlib
 import struct
+from collections import defaultdict
 from functools import lru_cache
 from uuid import UUID
 
@@ -67,7 +68,7 @@ class VMA:
 
             self._devices[dev_id] = Device(self, dev_id, self.blob_string(dev_info.devname_ptr), dev_info.size)
 
-        self._extent = @lru_cache(65536)(self._extent)
+        self._extent = lru_cache(65536)(self._extent)
 
     @property
     def creation_time(self):
@@ -147,7 +148,8 @@ class Extent:
         # There are at most 59 entries, so safe to parse ahead of use
         self._min = {}
         self._max = {}
-        self.blocks = []
+        self.blocks = defaultdict(list)
+        block_offset = self.data_offset
         for block_info in self.header.blockinfo:
             cluster_num = block_info & 0xFFFFFFFF
             dev_id = (block_info >> 32) & 0xFF
@@ -164,7 +166,14 @@ class Extent:
             elif cluster_num > self._max[dev_id]:
                 self._max[dev_id] = cluster_num
 
-            self.blocks.append((dev_id, cluster_num, mask))
+            self.blocks[dev_id].append((cluster_num, mask, block_offset))
+
+            if mask == 0xFFFF:
+                block_offset += 16 * c_vma.VMA_BLOCK_SIZE
+            elif mask == 0:
+                pass
+            else:
+                block_offset += bin(mask).count("1") * c_vma.VMA_BLOCK_SIZE
 
     def __repr__(self):
         return f"<Extent offset=0x{self.offset:x} size=0x{self.size:x}>"
@@ -218,26 +227,17 @@ def _iter_clusters(vma, device, cluster, count):
         if end < extent._min[device] or cluster > extent._max[device]:
             continue
 
-        block_offset = extent.data_offset
-        for dev_id, cluster_num, mask in extent.blocks:
-            if dev_id == device:
-                if cluster_num == cluster:
-                    yield cluster_num, mask, block_offset
+        for cluster_num, mask, block_offset in extent.blocks[device]:
+            if cluster_num == cluster:
+                yield cluster_num, mask, block_offset
+                cluster += 1
+
+                while cluster in temp:
+                    yield temp[cluster]
+                    del temp[cluster]
                     cluster += 1
-
-                    while cluster in temp:
-                        yield temp[cluster]
-                        del temp[cluster]
-                        cluster += 1
-                elif cluster < cluster_num <= end:
-                    temp[cluster_num] = (cluster_num, mask, block_offset)
-
-            if mask == 0xFFFF:
-                block_offset += 16 * c_vma.VMA_BLOCK_SIZE
-            elif mask == 0:
-                pass
-            else:
-                block_offset += bin(mask).count("1") * c_vma.VMA_BLOCK_SIZE
+            elif cluster < cluster_num <= end:
+                temp[cluster_num] = (cluster_num, mask, block_offset)
 
             if cluster == end:
                 break
