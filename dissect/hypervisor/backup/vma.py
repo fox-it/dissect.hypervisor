@@ -215,19 +215,19 @@ class DeviceDataStream(AlignedStream):
         return b"".join(result)
 
 
-def _iter_clusters(vma, device, cluster, count):
+def _iter_clusters(vma, dev_id, cluster, count):
     # Find clusters and starting offsets in all extents
     temp = {}
     end = cluster + count
 
     for extent in vma.extents():
-        if device not in extent.blocks:
+        if dev_id not in extent.blocks:
             continue
 
-        if end < extent._min[device] or cluster > extent._max[device]:
+        if end < extent._min[dev_id] or cluster > extent._max[dev_id]:
             continue
 
-        for cluster_num, mask, block_offset in extent.blocks[device]:
+        for cluster_num, mask, block_offset in extent.blocks[dev_id]:
             if cluster_num == cluster:
                 yield cluster_num, mask, block_offset
                 cluster += 1
