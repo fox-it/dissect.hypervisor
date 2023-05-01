@@ -221,7 +221,7 @@ def _iter_clusters(vma, device, cluster, count):
     end = cluster + count
 
     for extent in vma.extents():
-        if device not in extent._min:
+        if device not in extent.blocks:
             continue
 
         if end < extent._min[device] or cluster > extent._max[device]:
