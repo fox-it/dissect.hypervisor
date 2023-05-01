@@ -94,7 +94,7 @@ def setup_logging(logger, verbosity):
 def main():
     parser = argparse.ArgumentParser(description="VMA extractor")
     parser.add_argument("input", type=Path, help="path to vma file")
-    parser.add_argument("-o", "--output", type=Path, help="path to output directory")
+    parser.add_argument("-o", "--output", type=Path, required=True, help="path to output directory")
     parser.add_argument("-v", "--verbose", action="count", default=3, help="increase output verbosity")
     args = parser.parse_args()
 
@@ -135,7 +135,7 @@ def main():
         with progress:
             try:
                 for extent in vma.extents():
-                    data_offset = extent.data_offset
+                    vma.fh.seek(extent.data_offset)
                     for block_info in extent.header.blockinfo:
                         cluster_num = block_info & 0xFFFFFFFF
                         dev_id = (block_info >> 32) & 0xFF
@@ -147,7 +147,6 @@ def main():
                         fh_out = handles[dev_id]
                         fh_out.seek(cluster_num * c_vma.VMA_CLUSTER_SIZE)
 
-                        vma.fh.seek(data_offset)
                         if mask == 0xFFFF:
                             fh_out.write(vma.fh.read(c_vma.VMA_CLUSTER_SIZE))
                         elif mask == 0:
