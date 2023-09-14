@@ -30,7 +30,7 @@ class HDD:
     """
 
     def __init__(self, path: Path):
-        if path.is_file() and path.parent.suffix.lower() == ".hdd":
+        if path.is_file():
             path = path.parent
         self.path = path
 
