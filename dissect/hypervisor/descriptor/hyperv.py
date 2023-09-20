@@ -1,7 +1,10 @@
 # References:
 # - VmDataStore.dll
+from __future__ import annotations
 
 import struct
+from collections.abc import ItemsView, KeysView, ValuesView
+from typing import BinaryIO, Optional, Union
 
 from dissect.util.stream import RangeStream
 
@@ -17,29 +20,29 @@ from dissect.hypervisor.exceptions import InvalidSignature
 class HyperVFile:
     """HyperVFile implementation.
 
-    I think, technically, the underlying container is called HyperVStorage, and the HyperVFile adds
-    some features on top of that. We just call it HyperVFile for convenience.
+    I think, technically, the underlying container is called ``HyperVStorage``, and the ``HyperVFile`` adds
+    some features on top of that. We just call it ``HyperVFile`` for convenience.
 
-    A HyperVFile has 2 headers, one at 0x0000 and one at 0x1000. The active header is determined
+    A ``HyperVFile`` has 2 headers, one at ``0x0000`` and one at ``0x1000``. The active header is determined
     by a sequence number.
 
     A replay log is located at an offset specified in the header. This replay log functions as a journal
     for changes made to the file. A file is dirty if it contains outstanding entries in the replay log,
     and replaying the specified log entries is necessary. This is not currently implemented.
 
-    An object table seems to be located at 0x2000, but it's unclear if this is always the case. The offset
+    An object table seems to be located at ``0x2000``, but it's unclear if this is always the case. The offset
     might be related to the header size, log size or data alignment. This will need some more research.
     This table contains entries that describe the various "objects" contained within this file. The available
-    types are listed in the ObjectEntryType enum.
+    types are listed in the ``ObjectEntryType`` enum.
 
-    HyperVFile's have a version number, and it looks like there are some slight differences between
+    ``HyperVFile``'s have a version number, and it looks like there are some slight differences between
     different versions. The key tables are at least stored in a different manner, because there's code
     to handle loading them differently, and also to update them to the new format if an old version is
     encountered. However, I haven't seen any files with older versions yet, so we guard this implementation
-    to only version 0x0400 at this time.
+    to only version ``0x0400`` at this time.
     """
 
-    def __init__(self, fh):
+    def __init__(self, fh: BinaryIO):
         self.fh = fh
 
         self.fh.seek(c_hyperv.FIRST_HEADER_OFFSET)
@@ -59,8 +62,8 @@ class HyperVFile:
 
         self.replay_logs = [HyperVStorageReplayLog(self, self.header.replay_log_offset)]
         self.object_tables = [HyperVStorageObjectTable(self, c_hyperv.OBJECT_TABLE_OFFSET)]
-        self.key_tables = {}
-        self.file_objects = {}
+        self.key_tables: dict[int, list[HyperVStorageKeyTable]] = {}
+        self.file_objects: dict[int, HyperVStorageFileObject] = {}
 
         for object_table in self.object_tables:
             for entry in object_table.entries:
@@ -103,19 +106,19 @@ class HyperVFile:
                 else:
                     self.root[entry.key] = entry
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> HyperVStorageKeyTableEntry:
         return self.root[key]
 
-    def keys(self):
+    def keys(self) -> KeysView[str]:
         return self.root.keys()
 
-    def items(self):
+    def items(self) -> ItemsView[str, HyperVStorageKeyTableEntry]:
         return self.root.items()
 
-    def values(self):
+    def values(self) -> ValuesView[HyperVStorageKeyTableEntry]:
         return self.root.values()
 
-    def as_dict(self):
+    def as_dict(self) -> dict:
         obj = {}
 
         for key, entry in self.root.items():
@@ -124,10 +127,10 @@ class HyperVFile:
         return obj
 
     @property
-    def version(self):
+    def version(self) -> int:
         return self.header.version
 
-    def _align(self, offset):
+    def _align(self, offset: int) -> int:
         remainder = offset % self.header.alignment
         if remainder == 0:
             return offset
@@ -137,10 +140,10 @@ class HyperVFile:
 class HyperVStorageReplayLog:
     """The replay log tracks changes in the file.
 
-    Old changes are actually still resident in the log, but not counted in the num_entries field.
+    Old changes are actually still resident in the log, but not counted in the ``num_entries`` field.
     """
 
-    def __init__(self, hyperv_file, offset):
+    def __init__(self, hyperv_file: HyperVFile, offset: int):
         self.file = hyperv_file
         self.offset = offset
 
@@ -160,7 +163,7 @@ class HyperVStorageObjectTable:
     For example, the object table can list one or more key tables.
     """
 
-    def __init__(self, hyperv_file, offset):
+    def __init__(self, hyperv_file: HyperVFile, offset: int):
         self.file = hyperv_file
         self.offset = offset
 
@@ -179,7 +182,7 @@ class HyperVStorageKeyTable:
     A table has a specific table index and one or more key entries.
     """
 
-    def __init__(self, hyperv_file, offset, size):
+    def __init__(self, hyperv_file: HyperVFile, offset: int, size: int):
         self.file = hyperv_file
         self.offset = offset
         self.size = size
@@ -193,8 +196,8 @@ class HyperVStorageKeyTable:
         if self.header.signature != c_hyperv.SIGNATURE_KEY_TABLE_HEADER:
             raise InvalidSignature(f"Invalid key table signature: 0x{self.header.signature:x}")
 
-        self.entries = []
-        self._lookup = {}
+        self.entries: list[HyperVStorageKeyTableEntry] = []
+        self._lookup: dict[int, HyperVStorageKeyTableEntry] = {}
 
         entry_offset = len(c_hyperv.HyperVStorageKeyTable)
         while entry_offset < size:
@@ -208,12 +211,12 @@ class HyperVStorageKeyTable:
             entry_offset = entry_offset + entry.size
 
     @property
-    def index(self):
+    def index(self) -> int:
         """Return the table index."""
         return self.header.index
 
     @property
-    def sequence_number(self):
+    def sequence_number(self) -> int:
         """Return the table sequence number."""
         return self.header.sequence_number
 
@@ -223,89 +226,90 @@ class HyperVStorageKeyTableEntry:
 
     The first 16 bytes are a combined flag and type field. The high 8 bits are flags, the low 8 bits are type.
 
-    Only one flag is currently known, which we've called FileObjectPointer. It's the lowest bit of the flag bits.
+    Only one flag is currently known, which we've called ``FileObjectPointer``. It's the lowest bit of the flag bits.
     If this flag is set, it means the value of this entry is located in a file object. File objects pointers are
-    12 bytes and consist of a uint32 size and a uint64 offset value. The offset is the absolute offset into the
+    12 bytes and consist of a ``uint32`` size and a ``uint64`` offset value. The offset is the absolute offset into the
     file. This method is similar to how parent keys are referenced.
 
-    Values are stored in a file object if their size >= 0x800. As only strings and "arrays" are of variable size,
+    Values are stored in a file object if their size >= ``0x800``. As only strings and "arrays" are of variable size,
     these are the only data types that can be stored in file objects.
 
     Data type summary:
 
-    - KeyDataType.Free:
+    - ``KeyDataType.Free``:
         - Allocated but free.
 
-    - KeyDataType.Unknown:
+    - ``KeyDataType.Unknown``:
         - Unknown entry type. Anything greater than 9 and exactly 2 is unknown.
 
-    - KeyDataType.Int:
+    - ``KeyDataType.Int``:
         - Signed 64 bit integer.
 
-    - KeyDataType.UInt:
+    - ``KeyDataType.UInt``:
         - Unsigned 64 bit integer.
 
-    - KeyDataType.Double:
+    - ``KeyDataType.Double``:
         - 64 bit double.
 
-    - KeyDataType.String:
+    - ``KeyDataType.String``:
         - UTF-16-LE encoded string
 
-    - KeyDataType.Array:
+    - ``KeyDataType.Array``:
         - Bytes?
 
-    - KeyDataType.Bool:
+    - ``KeyDataType.Bool``:
         - Boolean encoded as 32 bit integer.
 
-    - KeyDataType.Node:
+    - ``KeyDataType.Node``:
         - Tree nodes. Value size is coded as 8, but actual size is 12.
         - First 8 bytes are unknown, but latter 4 bytes is the insertion sequence number.
     """
 
-    def __init__(self, table, offset):
+    def __init__(self, table: HyperVStorageKeyTable, offset: int):
         self.table = table
         self.offset = offset
         self.header = c_hyperv.HyperVStorageKeyTableEntryHeader(table.raw[offset:])
-        self.children = {}
+        self.children: dict[str, HyperVStorageKeyTableEntry] = {}
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> HyperVStorageKeyTableEntry:
         return self.children[key]
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<HyperVStorageKeyTableEntry type={self.type} size={self.size}>"
 
     @property
-    def parent(self):
+    def parent(self) -> Optional[HyperVStorageKeyTableEntry]:
         """Return the entry parent, if there is any.
 
-        Requires that all key tables are loaded."""
+        Requires that all key tables are loaded.
+        """
         if not self.header.parent_table_idx:
             return None
 
         return self.table.file.key_tables[self.header.parent_table_idx][0]._lookup[self.header.parent_offset]
 
     @property
-    def flags(self):
+    def flags(self) -> int:
         """Return the entry flags."""
         return (self.header.type & 0xFF00) >> 8
 
     @property
-    def type(self):
+    def type(self) -> KeyDataType:
         """Return the entry type."""
         return KeyDataType(self.header.type & 0xFF)
 
     @property
-    def size(self):
+    def size(self) -> int:
         """Return the entry size."""
         return self.header.size
 
     @property
-    def is_file_object_pointer(self):
+    def is_file_object_pointer(self) -> bool:
         """Return whether the value is a file object pointer."""
         return bool(KeyDataFlag(self.flags) & KeyDataFlag.FileObjectPointer)
 
     @property
-    def file_object_pointer(self):
+    def file_object_pointer(self) -> tuple[int, int]:
         """Return the file object pointer information."""
         if not self.is_file_object_pointer:
             raise TypeError(f"KeyTableEntry is not a file object pointer: {self}")
@@ -316,13 +320,13 @@ class HyperVStorageKeyTableEntry:
         return offset, size
 
     @property
-    def raw(self):
+    def raw(self) -> memoryview:
         """Returns the raw data for this entry."""
         data_offset = self.offset + len(c_hyperv.HyperVStorageKeyTableEntryHeader)
         return self.table.raw[data_offset : self.offset + self.size]
 
     @property
-    def data(self):
+    def data(self) -> memoryview:
         """Returns the data portion for this entry."""
         if self.is_file_object_pointer:
             _, size = self.file_object_pointer
@@ -333,13 +337,13 @@ class HyperVStorageKeyTableEntry:
             return self.raw[self.header.data_offset :]
 
     @property
-    def key(self):
+    def key(self) -> str:
         """Returns the key name for this entry."""
         # Subtract 1 for the terminating null byte
         return self.raw.tobytes()[: self.header.data_offset - 1].decode("utf-8")
 
     @property
-    def value(self):
+    def value(self) -> Union[int, bytes, str]:
         """Return a Python native value for this entry."""
         data = self.data
 
@@ -366,22 +370,22 @@ class HyperVStorageKeyTableEntry:
             return struct.unpack("<I", data[:4])[0] != 0
 
     @property
-    def data_size(self):
+    def data_size(self) -> int:
         """Return the total amount of data bytes, including the key name.
 
         Reference:
-        - HyperVStorageKeyTableEntry::GetDataSizeInBytes
+            - ``HyperVStorageKeyTableEntry::GetDataSizeInBytes``
         """
         if self.type == KeyDataType.Node:
             return self.header.data_offset + 12
         return self.header.data_offset + self.value_size
 
     @property
-    def value_size(self):
+    def value_size(self) -> int:
         """Return the amount of bytes a value occupies.
 
         Reference:
-        - HyperVStorageKeyTableEntry::GetValueSizeInBytes
+            - ``HyperVStorageKeyTableEntry::GetValueSizeInBytes``
         """
         if self.type == KeyDataType.Free:
             return self.header.size - len(c_hyperv.HyperVStorageKeyTableEntryHeader)
@@ -408,16 +412,16 @@ class HyperVStorageKeyTableEntry:
 
         raise TypeError(f"Unknown data type: {self.type}")
 
-    def keys(self):
+    def keys(self) -> KeysView[int]:
         return self.children.keys()
 
-    def items(self):
+    def items(self) -> ItemsView[int, HyperVStorageKeyTableEntry]:
         return self.children.items()
 
-    def values(self):
+    def values(self) -> ValuesView[HyperVStorageKeyTableEntry]:
         return self.children.values()
 
-    def as_dict(self):
+    def as_dict(self) -> dict:
         if self.type != KeyDataType.Node:
             raise TypeError(f"KeyTableEntry can't be dumped as dictionary: {self.type}")
 
@@ -432,7 +436,7 @@ class HyperVStorageKeyTableEntry:
 
         return obj
 
-    def get_file_object(self):
+    def get_file_object(self) -> HyperVStorageFileObject:
         if not self.is_file_object_pointer:
             raise TypeError(f"Entry is not a file object pointer: {self}")
 
@@ -449,16 +453,16 @@ class HyperVStorageFileObject:
 
     File objects are referenced by their absolute offset in the file. The object table also stores
     a size, but this size will always be aligned with the data alignment of the Hyper-V file.
-    The actual size of the data stored is located in the data portion of the HyperVStorageKeyTableEntry
+    The actual size of the data stored is located in the data portion of the ``HyperVStorageKeyTableEntry``
     that references that file object.
     """
 
-    def __init__(self, hyperv_file, offset, size):
+    def __init__(self, hyperv_file: HyperVFile, offset: int, size: int):
         self.file = hyperv_file
         self.offset = offset
         self.size = size
 
-    def read(self, n=-1):
+    def read(self, n: int = -1) -> bytes:
         if n is not None and n < -1:
             raise ValueError("invalid number of bytes to read")
 
@@ -470,5 +474,5 @@ class HyperVStorageFileObject:
         self.file.fh.seek(self.offset)
         return self.file.fh.read(read_length)
 
-    def open(self, size=None):
+    def open(self, size: Optional[int] = None) -> BinaryIO:
         return RangeStream(self.file.fh, self.offset, size or self.size)
