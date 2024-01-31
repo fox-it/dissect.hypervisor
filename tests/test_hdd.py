@@ -1,5 +1,6 @@
 import gzip
 from pathlib import Path
+from typing import BinaryIO
 from unittest.mock import patch
 
 from dissect.hypervisor.disk.hdd import HDD
@@ -7,14 +8,14 @@ from dissect.hypervisor.disk.hdd import HDD
 Path_open = Path.open
 
 
-def mock_open_gz(self, *args, **kwargs):
+def mock_open_gz(self, *args, **kwargs) -> BinaryIO:
     if self.suffix.lower() != ".hds":
         return Path_open(self, *args, **kwargs)
 
     return gzip.open(self.with_suffix(self.suffix + ".gz"))
 
 
-def test_plain_hdd(plain_hdd):
+def test_plain_hdd(plain_hdd: str) -> None:
     hdd = HDD(Path(plain_hdd))
     storages = hdd.descriptor.storage_data.storages
 
@@ -31,7 +32,7 @@ def test_plain_hdd(plain_hdd):
             assert stream.read(1024 * 1024).strip(bytes([i])) == b""
 
 
-def test_expanding_hdd(expanding_hdd):
+def test_expanding_hdd(expanding_hdd: str) -> None:
     hdd = HDD(Path(expanding_hdd))
     storages = hdd.descriptor.storage_data.storages
 
@@ -48,7 +49,7 @@ def test_expanding_hdd(expanding_hdd):
             assert stream.read(1024 * 1024).strip(bytes([i])) == b""
 
 
-def test_split_hdd(split_hdd):
+def test_split_hdd(split_hdd: str) -> None:
     hdd = HDD(Path(split_hdd))
     storages = hdd.descriptor.storage_data.storages
 
@@ -81,3 +82,10 @@ def test_split_hdd(split_hdd):
                 assert buf == bytes([i + 1] * 512) + bytes([i + 2] * 512)
             else:
                 assert buf == bytes([i + 1] * 512)
+
+
+def test_file_use_parent(plain_hdd: str) -> None:
+    hdd = HDD(Path(plain_hdd).joinpath("plain.hdd"))
+    storages = hdd.descriptor.storage_data.storages
+
+    assert len(storages) == 1
