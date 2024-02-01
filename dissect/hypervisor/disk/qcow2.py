@@ -25,7 +25,7 @@ try:
     import zstandard as zstd
 
     HAS_ZSTD = True
-except ImportError:
+except (AttributeError, ImportError):
     HAS_ZSTD = False
 
 

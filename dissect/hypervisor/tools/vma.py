@@ -29,7 +29,7 @@ try:
         TimeRemainingColumn(),
         transient=True,
     )
-except ImportError:
+except (AttributeError, ImportError):
     RichHandler = logging.StreamHandler
 
     class Progress:
