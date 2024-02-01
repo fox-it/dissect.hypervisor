@@ -1,10 +1,7 @@
 from typing import IO, Iterator
 from xml.etree.ElementTree import Element
 
-try:
-    from defusedxml import ElementTree
-except ImportError:
-    from xml.etree import ElementTree
+from defusedxml import ElementTree
 
 
 class VBox:
