@@ -8,11 +8,7 @@ from typing import BinaryIO, Iterator, Optional, Tuple, Union
 from uuid import UUID
 from xml.etree.ElementTree import Element
 
-try:
-    from defusedxml import ElementTree
-except ImportError:
-    from xml.etree import ElementTree
-
+from defusedxml import ElementTree
 from dissect.util.stream import AlignedStream
 
 from dissect.hypervisor.disk.c_hdd import SECTOR_SIZE, c_hdd
