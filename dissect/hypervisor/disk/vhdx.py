@@ -206,7 +206,8 @@ class BlockAllocationTable:
         else:
             self.entry_count = self._pb_count + ((self._pb_count - 1) // self.chunk_ratio)
 
-    @lru_cache(4096)
+        self.get = lru_cache(4096)(self.get)
+
     def get(self, entry):
         """Get a BAT entry."""
         if entry + 1 > self.entry_count:
