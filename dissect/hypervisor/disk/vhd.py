@@ -101,7 +101,8 @@ class BlockAllocationTable:
         self.offset = offset
         self.max_entries = max_entries
 
-    @lru_cache(4096)
+        self.get = lru_cache(4096)(self.get)
+
     def get(self, block):
         # This could be improved by caching the entire BAT (or chunks if too large)
         if block + 1 > self.max_entries:

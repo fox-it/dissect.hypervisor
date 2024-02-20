@@ -151,6 +151,8 @@ class SparseDisk:
         self.offset = offset
         self.sector_offset = sector_offset
 
+        self._lookup_grain_table = lru_cache(128)(self._lookup_grain_table)
+
         fh.seek(0, io.SEEK_END)
         self.filesize = fh.tell()
         fh.seek(0, io.SEEK_SET)
@@ -199,7 +201,6 @@ class SparseDisk:
         self.size = self.header.capacity * SECTOR_SIZE
         self.sector_count = self.header.capacity
 
-    @lru_cache(128)
     def _lookup_grain_table(self, directory):
         gtbl_offset = self._grain_directory[directory]
 

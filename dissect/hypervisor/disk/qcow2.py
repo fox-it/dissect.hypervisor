@@ -48,6 +48,8 @@ class QCow2(AlignedStream):
     def __init__(self, fh, data_file=None, backing_file=None):
         self.fh = fh
 
+        self.l2_table = lru_cache(maxsize=128)(self.l2_table)
+
         self.header = c_qcow2.QCowHeader(fh)
         if self.header.magic != QCOW2_MAGIC:
             raise InvalidHeaderError("Invalid qcow2 header magic")
@@ -167,7 +169,6 @@ class QCow2(AlignedStream):
         self.fh.seek(self.header.l1_table_offset)
         return c_qcow2.uint64[self.header.l1_size](self.fh)
 
-    @lru_cache(maxsize=128)
     def l2_table(self, l2_offset):
         return L2Table(self, l2_offset)
 
