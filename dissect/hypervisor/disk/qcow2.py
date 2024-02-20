@@ -116,8 +116,9 @@ class QCow2(AlignedStream):
             if backing_file != ALLOW_NO_BACKING_FILE:
                 self.backing_file = backing_file
 
-        super().__init__(self.header.size)
         self.l2_table = lru_cache(128)(self.l2_table)
+
+        super().__init__(self.header.size)
 
     def _read_extensions(self):
         start_offset = self.header.header_length
