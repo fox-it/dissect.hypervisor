@@ -198,8 +198,6 @@ class BlockAllocationTable:
         self.offset = offset
         self.chunk_ratio = vhdx._chunk_ratio
 
-        self.get = lru_cache(4096)(self.get)
-
         self._pb_count = (vhdx.size + vhdx.block_size - 1) // vhdx.block_size
         self._sb_count = (self._pb_count + self.chunk_ratio - 1) // self.chunk_ratio
 
@@ -207,6 +205,8 @@ class BlockAllocationTable:
             self.entry_count = self._sb_count * (self.chunk_ratio + 1)
         else:
             self.entry_count = self._pb_count + ((self._pb_count - 1) // self.chunk_ratio)
+
+        self.get = lru_cache(4096)(self.get)
 
     def get(self, entry):
         """Get a BAT entry."""

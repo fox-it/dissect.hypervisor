@@ -48,8 +48,6 @@ class QCow2(AlignedStream):
     def __init__(self, fh, data_file=None, backing_file=None):
         self.fh = fh
 
-        self.l2_table = lru_cache(maxsize=128)(self.l2_table)
-
         self.header = c_qcow2.QCowHeader(fh)
         if self.header.magic != QCOW2_MAGIC:
             raise InvalidHeaderError("Invalid qcow2 header magic")
@@ -119,6 +117,7 @@ class QCow2(AlignedStream):
                 self.backing_file = backing_file
 
         super().__init__(self.header.size)
+        self.l2_table = lru_cache(128)(self.l2_table)
 
     def _read_extensions(self):
         start_offset = self.header.header_length
