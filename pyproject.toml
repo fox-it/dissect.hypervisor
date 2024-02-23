@@ -48,7 +48,9 @@ dev = [
 ]
 
 [project.scripts]
-vma-extract = "dissect.hypervisor.tools.vma:main"
+vma-extract = "dissect.hypervisor.tools.backup:main"
+vbk-extract = "dissect.hypervisor.tools.backup:main"
+backup-extract = "dissect.hypervisor.tools.vma:main"
 envelope-decrypt = "dissect.hypervisor.tools.envelope:main"
 
 [tool.black]
