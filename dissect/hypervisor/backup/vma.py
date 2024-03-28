@@ -21,18 +21,18 @@ class VMA:
     Parse and provide a readable object for devices in a Proxmox VMA backup file.
     VMA is designed to be streamed for extraction, so we need to do some funny stuff to create a readable
     object from it. Performance is not optimal, so it's generally advised to extract a VMA instead.
-    The vma-extract utility can be used for that.
+    The ``vma-extract`` utility can be used for that.
     """
 
     def __init__(self, fh):
         self.fh = fh
 
-        offset = fh.tell()
+        fh.seek(0)
         self.header = c_vma.VmaHeader(fh)
         if self.header.magic != VMA_MAGIC:
             raise InvalidHeaderError("Invalid VMA header magic")
 
-        fh.seek(offset)
+        fh.seek(0)
         header_data = bytearray(fh.read(self.header.header_size))
         header_data[32:48] = b"\x00" * 16
         if hashlib.md5(header_data).digest() != self.header.md5sum:
