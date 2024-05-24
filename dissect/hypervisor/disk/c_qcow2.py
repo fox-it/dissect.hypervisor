@@ -1,4 +1,4 @@
-from dissect import cstruct
+from dissect.cstruct import cstruct
 
 qcow2_def = """
 #define MIN_CLUSTER_BITS 9
@@ -136,8 +136,7 @@ enum QCow2SubclusterType {
 };
 """
 
-c_qcow2 = cstruct.cstruct(endian=">")
-c_qcow2.load(qcow2_def)
+c_qcow2 = cstruct(endian=">").load(qcow2_def)
 
 QCOW2_MAGIC = 0x514649FB
 QCOW2_MAGIC_BYTES = c_qcow2.uint32.dumps(QCOW2_MAGIC)

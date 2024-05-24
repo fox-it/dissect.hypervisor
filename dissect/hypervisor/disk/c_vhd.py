@@ -1,4 +1,4 @@
-from dissect import cstruct
+from dissect.cstruct import cstruct
 
 vhd_def = """
 struct footer {
@@ -38,14 +38,13 @@ struct dynamic_header {
     uint32          checksum;
     char            parent_unique_id[16];
     uint32          parent_timestamp;
-    uint32          reserved;
+    uint32          reserved1;
     char            parent_unicode_name[512];
     parent_locator  parent_locators[8];
-    char            reserved[256];
+    char            reserved2[256];
 };
 """
 
-c_vhd = cstruct.cstruct(endian=">")
-c_vhd.load(vhd_def)
+c_vhd = cstruct(endian=">").load(vhd_def)
 
 SECTOR_SIZE = 512

@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from dissect import cstruct
+from dissect.cstruct import cstruct
 
 vhdx_def = """
 #define PAYLOAD_BLOCK_NOT_PRESENT           0
@@ -99,8 +99,7 @@ struct parent_locator_entry {
 };
 """
 
-c_vhdx = cstruct.cstruct()
-c_vhdx.load(vhdx_def)
+c_vhdx = cstruct().load(vhdx_def)
 
 ALIGNMENT = 64 * 1024
 MB = 1024 * 1024

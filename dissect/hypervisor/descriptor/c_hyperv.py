@@ -1,4 +1,4 @@
-from dissect import cstruct
+from dissect.cstruct import cstruct
 
 hyperv_def = """
 /* ======== File header ======== */
@@ -112,8 +112,7 @@ struct HyperVStorageKeyTableEntryHeader {
 };
 """
 
-c_hyperv = cstruct.cstruct()
-c_hyperv.load(hyperv_def)
+c_hyperv = cstruct().load(hyperv_def)
 
 ObjectEntryType = c_hyperv.ObjectEntryType
 KeyDataType = c_hyperv.KeyDataType
