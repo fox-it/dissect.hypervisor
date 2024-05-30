@@ -26,8 +26,8 @@ classifiers = [
 ]
 dependencies = [
     "defusedxml",
-    "dissect.cstruct>3,<5",
-    "dissect.util>2,<4",
+    "dissect.cstruct>=4.dev,<5",
+    "dissect.util>=3,<4",
 ]
 dynamic = ["version"]
 
@@ -40,6 +40,11 @@ repository = "https://github.com/fox-it/dissect.hypervisor"
 full = [
     "pycryptodome",
     "rich",
+]
+dev = [
+    "dissect.hypervisor[full]",
+    "dissect.cstruct>=4.0.dev,<5.0.dev",
+    "dissect.util>=3.0.dev,<4.0.dev",
 ]
 
 [project.scripts]
