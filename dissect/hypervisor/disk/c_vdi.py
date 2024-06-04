@@ -1,4 +1,4 @@
-from dissect import cstruct
+from dissect.cstruct import cstruct
 
 # https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Storage/VDICore.h
 # https://forums.virtualbox.org/viewtopic.php?t=8046
@@ -81,8 +81,7 @@ struct HeaderDescriptor {
 };
 """
 
-c_vdi = cstruct.cstruct()
-c_vdi.load(vdi_def)
+c_vdi = cstruct().load(vdi_def)
 
 VDI_SIGNATURE = 0xBEDA107F
 

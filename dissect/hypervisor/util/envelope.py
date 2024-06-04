@@ -25,7 +25,7 @@ try:
 except ImportError:
     HAS_PYCRYPTODOME = False
 
-from dissect import cstruct
+from dissect.cstruct import cstruct
 from dissect.util.stream import RangeStream
 
 c_def = """
@@ -69,8 +69,7 @@ enum AttributeType : uint8 {
     Bytes = 0xC
 };
 """
-c_envelope = cstruct.cstruct()
-c_envelope.load(c_def)
+c_envelope = cstruct().load(c_def)
 
 FILE_HEADER_MAGIC = b"DataTransformEnvelope"
 FOOTER_AEAD_MAGIC = b"DataTransformAeadFooter"

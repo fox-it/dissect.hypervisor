@@ -1,4 +1,4 @@
-from dissect import cstruct
+from dissect.cstruct import cstruct
 
 vma_def = """
 #define VMA_BLOCK_BITS          12
@@ -53,8 +53,7 @@ struct VmaExtentHeader {
 };
 """
 
-c_vma = cstruct.cstruct(endian=">")
-c_vma.load(vma_def)
+c_vma = cstruct(endian=">").load(vma_def)
 
 
 VMA_MAGIC = b"VMA\x00"

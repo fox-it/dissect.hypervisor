@@ -3,7 +3,7 @@
 # - https://github.com/qemu/qemu/blob/master/docs/interop/parallels.txt
 
 
-from dissect import cstruct
+from dissect.cstruct import cstruct
 
 hdd_def = """
 /* Compressed disk v1 signature */
@@ -62,7 +62,6 @@ struct pvd_dirty_bitmap_raw {
 };
 """
 
-c_hdd = cstruct.cstruct()
-c_hdd.load(hdd_def)
+c_hdd = cstruct().load(hdd_def)
 
 SECTOR_SIZE = c_hdd.SECTOR_SIZE

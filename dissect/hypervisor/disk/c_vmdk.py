@@ -1,6 +1,6 @@
 import struct
 
-from dissect import cstruct
+from dissect.cstruct import cstruct
 
 vmdk_def = """
 typedef struct {
@@ -132,8 +132,7 @@ typedef struct {
 #define GRAIN_MARKER_PROGRESS           4
 """
 
-c_vmdk = cstruct.cstruct()
-c_vmdk.load(vmdk_def)
+c_vmdk = cstruct().load(vmdk_def)
 
 SECTOR_SIZE = 512
 
