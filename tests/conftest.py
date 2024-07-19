@@ -97,3 +97,13 @@ def keystore() -> Iterator[TextIO]:
 @pytest.fixture
 def vgz() -> Iterator[BinaryIO]:
     yield from open_file("data/test.vgz")
+
+
+@pytest.fixture
+def vbk9() -> Iterator[BinaryIO]:
+    yield from open_file_gz("data/test9.vbk.gz")
+
+
+@pytest.fixture
+def vbk13() -> Iterator[BinaryIO]:
+    yield from open_file_gz("data/test13.vbk.gz")
