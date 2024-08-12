@@ -103,8 +103,9 @@ EnvelopeAttribute = namedtuple("EnvelopeAttribute", ("type", "flag", "value"))
 class Envelope:
     """Implements an encryption envelope as used within ESXi."""
 
-    def __init__(self, fh: BinaryIO, should_verify: bool = True):
+    def __init__(self, fh: BinaryIO, verify: bool = True):
         self.fh = fh
+        self.verify = verify
 
         header_buf = io.BytesIO(self.fh.read(ENVELOPE_BLOCK_SIZE))
         self.header = c_envelope.EnvelopeFileHeader(header_buf)
@@ -126,7 +127,6 @@ class Envelope:
         self.key_hash = self.attributes["vmware.keyHash"].value
         self.iv = self.attributes.get("vmware.iv", EnvelopeAttribute(None, None, None)).value
         self.digest = None
-        self.should_verify = should_verify
 
         if self.cipher_name == "AES-256-GCM":
             self.fh.seek(-ENVELOPE_BLOCK_SIZE, io.SEEK_END)
@@ -191,7 +191,7 @@ class Envelope:
         footer = c_envelope.DataTransformCryptoFooter(bytes(decrypted[-512:]))
         decrypted = decrypted[: -4096 - footer.padding]
 
-        if self.should_verify:
+        if self.verify:
             cipher.verify(self.digest)
 
         return bytes(decrypted)
