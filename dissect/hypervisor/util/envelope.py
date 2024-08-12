@@ -103,8 +103,9 @@ EnvelopeAttribute = namedtuple("EnvelopeAttribute", ("type", "flag", "value"))
 class Envelope:
     """Implements an encryption envelope as used within ESXi."""
 
-    def __init__(self, fh: BinaryIO):
+    def __init__(self, fh: BinaryIO, verify: bool = True):
         self.fh = fh
+        self.verify = verify
 
         header_buf = io.BytesIO(self.fh.read(ENVELOPE_BLOCK_SIZE))
         self.header = c_envelope.EnvelopeFileHeader(header_buf)
@@ -190,7 +191,8 @@ class Envelope:
         footer = c_envelope.DataTransformCryptoFooter(bytes(decrypted[-512:]))
         decrypted = decrypted[: -4096 - footer.padding]
 
-        cipher.verify(self.digest)
+        if self.verify:
+            cipher.verify(self.digest)
 
         return bytes(decrypted)
 
