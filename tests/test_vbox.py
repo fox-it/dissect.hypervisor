@@ -3,7 +3,7 @@ from io import StringIO
 from dissect.hypervisor.descriptor.vbox import VBox
 
 
-def test_vbox():
+def test_vbox() -> None:
     xml = """
     <?xml version="1.0"?>
     <VirtualBox xmlns="http://www.virtualbox.org/">
@@ -22,7 +22,7 @@ def test_vbox():
         assert next(vbox.disks()) == "os2warp4.vdi"
 
 
-def test_vbox_lowercase_disk_format():
+def test_vbox_lowercase_disk_format() -> None:
     xml = """
     <?xml version="1.0"?>
     <VirtualBox xmlns="http://www.virtualbox.org/">
