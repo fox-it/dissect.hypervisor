@@ -157,15 +157,16 @@ class SnapshotSlot:
         self.header = c_vbk.SnapshotSlotHeader(vbk.fh)
         self.descriptor = None
         self.grain = None
+        self.valid_max_banks = 0
         self.banks = []
 
         if self.header.ContainsSnapshot:
             self.descriptor = c_vbk.SnapshotDescriptor(vbk.fh)
             self.grain = c_vbk.BanksGrain(vbk.fh)
 
-            valid_max_banks = 0xF8 if self.vbk.header.SnapshotSlotFormat == 0 else 0x7F00
+            self.valid_max_banks = 0xF8 if self.vbk.header.SnapshotSlotFormat == 0 else 0x7F00
 
-            if self.grain.MaxBanks > valid_max_banks:
+            if self.grain.MaxBanks > self.valid_max_banks:
                 raise VBKError("Invalid SnapshotSlot: MaxBanks is not valid")
             if self.grain.StoredBanks > self.grain.MaxBanks:
                 raise VBKError("Invalid SnapshotSlot: StoredBanks is greater than MaxBanks")
@@ -185,11 +186,11 @@ class SnapshotSlot:
         if self.header.ContainsSnapshot:
             slot_size += self.grain.MaxBanks * len(c_vbk.BankDescriptor)
         else:
-            slot_size += (0xF8 if self.vbk.header.SnapshotSlotFormat == 0 else 0x7F00) * len(c_vbk.BankDescriptor)
+            slot_size += self.valid_max_banks * len(c_vbk.BankDescriptor)
 
-        if slot_size & 0xFFF:
+        if slot_size & (PAGE_SIZE - 1):
             # Round to next page boundary
-            slot_size = (slot_size & ~0xFFF) + PAGE_SIZE
+            slot_size = (slot_size & ~(PAGE_SIZE - 1)) + PAGE_SIZE
 
         return slot_size
 
@@ -279,7 +280,7 @@ class Bank:
         self.vbk.fh.seek(self.offset)
         return crc(self.vbk.fh.read(self.size)) == crc
 
-    def page(self, page: int) -> bytes:
+    def page(self, page: int) -> memoryview:
         """Read a page from the bank.
 
         Args:
@@ -840,7 +841,7 @@ class MetaVector(Generic[T]):
         page = self._pages[page_id]
         offset = (offset * self._entry_size) + 8
 
-        buf = self.vbk.active_slot.page(page)
+        buf = self.vbk.page(page)
         entry = buf[offset : offset + self._entry_size]
         return entry
 
@@ -929,7 +930,7 @@ class MetaVector2(MetaVector[T]):
         offset *= self._entry_size
 
         page_no = self._lookup_page(page_idx)
-        return self.vbk.active_slot.page(page_no)[offset : offset + self._entry_size]
+        return self.vbk.page(page_no)[offset : offset + self._entry_size]
 
 
 class FibMetaSparseTable:
@@ -952,6 +953,7 @@ class FibMetaSparseTable:
         self.page = page
         self.count = count
 
+        # Newer versions use a different block descriptor
         self.type = FibBlockDescriptorV7 if self.vbk.is_v7() else FibBlockDescriptor
         self._fake_sparse = self.type(
             self.vbk,
@@ -966,7 +968,7 @@ class FibMetaSparseTable:
 
         self._open_table = lru_cache(128)(self._open_table)
 
-    def _open_table(self, page: int, count: int) -> MetaVector2[FibBlockDescriptor | FibBlockDescriptorV7]:
+    def _open_table(self, page: int, count: int) -> MetaVector[FibBlockDescriptor | FibBlockDescriptorV7]:
         return MetaVector(self.vbk, self.type, page, count)
 
     def get(self, idx: int) -> FibBlockDescriptor | FibBlockDescriptorV7:
@@ -1002,7 +1004,7 @@ class FibStream(AlignedStream):
         self.page = page
         self.count = count
 
-        self.mt = FibMetaSparseTable(vbk, page, count)
+        self.table = FibMetaSparseTable(vbk, page, count)
 
         super().__init__(size, align=vbk.block_size)
 
@@ -1017,7 +1019,7 @@ class FibStream(AlignedStream):
 
             read_size = min(length, block_size - offset_in_block)
 
-            block_desc = self.mt.get(block_idx)
+            block_desc = self.table.get(block_idx)
 
             if block_desc.is_normal():
                 block = self.vbk.block_store.get(block_desc.block_id)
