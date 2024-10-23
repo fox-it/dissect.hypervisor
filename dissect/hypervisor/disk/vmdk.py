@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import ctypes
 import io
 import logging
@@ -5,6 +7,7 @@ import os
 import textwrap
 import zlib
 from bisect import bisect_right
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
@@ -59,13 +62,13 @@ class VMDK(AlignedStream):
                 if self.descriptor.attr["parentCID"] != "ffffffff":
                     self.parent = open_parent(path.parent, self.descriptor.attr["parentFileNameHint"])
 
-                for _, size, extent_type, filename in self.descriptor.extents:
-                    if extent_type in ["SPARSE", "VMFSSPARSE", "SESPARSE"]:
-                        sdisk_fh = path.with_name(filename).open("rb")
+                for extent in self.descriptor.extents:
+                    if extent.type in ["SPARSE", "VMFSSPARSE", "SESPARSE"]:
+                        sdisk_fh = path.with_name(extent.filename).open("rb")
                         self.disks.append(SparseDisk(sdisk_fh, parent=self.parent))
-                    elif extent_type in ["VMFS", "FLAT"]:
-                        rdisk_fh = path.with_name(filename).open("rb")
-                        self.disks.append(RawDisk(rdisk_fh, size * SECTOR_SIZE))
+                    elif extent.type in ["VMFS", "FLAT"]:
+                        rdisk_fh = path.with_name(extent.filename).open("rb")
+                        self.disks.append(RawDisk(rdisk_fh, extent.sectors * SECTOR_SIZE))
 
             elif magic in (COWD_MAGIC, VMDK_MAGIC, SESPARSE_MAGIC):
                 sparse_disk = SparseDisk(fh)
@@ -398,8 +401,30 @@ class SparseExtentHeader:
         return getattr(self.hdr, attr)
 
 
+@dataclass
+class ExtentDescriptor:
+    access_mode: str
+    sectors: int
+    type: str
+    filename: str | None = None
+    start_sector: int | None = None
+    partition_uuid: str | None = None
+    device_identifier: str | None = None
+
+    def __post_init__(self) -> None:
+        self.sectors = int(self.sectors)
+
+        if isinstance(self.filename, str):
+            self.filename = self.filename.strip('"')
+
+        if self.start_sector:
+            self.start_sector = int(self.start_sector)
+
+
 class DiskDescriptor:
-    def __init__(self, attr, extents, disk_db, sectors, raw_config=None):
+    def __init__(
+        self, attr: dict, extents: list[ExtentDescriptor], disk_db: dict, sectors: int, raw_config: str | None = None
+    ):
         self.attr = attr
         self.extents = extents
         self.ddb = disk_db
@@ -407,9 +432,15 @@ class DiskDescriptor:
         self.raw = raw_config
 
     @classmethod
-    def parse(cls, vmdk_config):
+    def parse(cls, vmdk_config: str) -> DiskDescriptor:
+        """Return :class:`DiskDescriptor` based on the provided ``vmdk_config``.
+
+        Resources:
+            - https://github.com/libyal/libvmdk/blob/main/documentation/VMWare%20Virtual%20Disk%20Format%20(VMDK).asciidoc
+        """  # noqa: E501
+
         descriptor_settings = {}
-        extents = []
+        extents: list[ExtentDescriptor] = []
         disk_db = {}
         sectors = 0
 
@@ -420,11 +451,17 @@ class DiskDescriptor:
                 continue
 
             if line.startswith("RW ") or line.startswith("RDONLY ") or line.startswith("NOACCESS "):
-                access_type, size, extent_type, filename = line.split(" ", 3)
-                filename = filename.strip('"')
-                size = int(size)
-                sectors += size
-                extents.append([access_type, size, extent_type, filename])
+                # Extent descriptors can have up to seven values according to libvmdk documentation.
+                parts = line.split(" ", maxsplit=6)
+
+                if len(parts) < 3:
+                    # TODO: or should we raise a ValueError?
+                    log.error("Unexpected extent descriptor format in vmdk config: %s", line)
+                    continue
+
+                extent = ExtentDescriptor(*parts)
+                sectors += extent.sectors
+                extents.append(extent)
                 continue
 
             setting, _, value = line.partition("=")
@@ -460,8 +497,8 @@ class DiskDescriptor:
         descriptor_settings = "\n".join(descriptor_settings)
 
         extents = []
-        for access_type, size, extent_type, filename in self.extents:
-            extents.append('{} {} {} "{}"'.format(access_type, size, extent_type, filename))
+        for extent in self.extents:
+            extents.append('{} {} {} "{}"'.format(extent.access_mode, extent.sectors, extent.type, extent.filename))
         extents = "\n".join(extents)
 
         disk_db = []
