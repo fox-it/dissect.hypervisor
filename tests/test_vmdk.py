@@ -76,8 +76,11 @@ def test_vmdk_sesparse(sesparse_vmdk):
                 ),
             ],
         ),
+        ("RW 1234567890", []),
+        ('RDONLY "file.vmdk"', []),
+        ("NOACCESS", []),
     ],
-    ids=("sparse", "flat", "zero", "sparse-ids"),
+    ids=("sparse", "flat", "zero", "sparse-ids", "bad-1", "bad-2", "bad-3"),
 )
 def test_vmdk_extent_description(extent_description: str, expected_extents: list) -> None:
     """test if we correctly parse VMDK sparse and flat extent descriptions.

@@ -412,13 +412,20 @@ class ExtentDescriptor:
     device_identifier: str | None = None
 
     def __post_init__(self) -> None:
+        self._raw = " ".join(map(str, [v for v in self.__dict__.values() if v is not None]))
         self.sectors = int(self.sectors)
 
-        if isinstance(self.filename, str):
+        if self.filename:
             self.filename = self.filename.strip('"')
 
         if self.start_sector:
             self.start_sector = int(self.start_sector)
+
+    def __repr__(self) -> str:
+        return f"<ExtentDescriptor {self._raw}>"
+
+    def __str__(self) -> str:
+        return self._raw
 
 
 class DiskDescriptor:
@@ -455,8 +462,7 @@ class DiskDescriptor:
                 parts = line.split(" ", maxsplit=6)
 
                 if len(parts) < 3:
-                    # TODO: or should we raise a ValueError?
-                    log.error("Unexpected extent descriptor format in vmdk config: %s", line)
+                    log.error("Unexpected ExtentDescriptor format in vmdk config: %s", line)
                     continue
 
                 extent = ExtentDescriptor(*parts)
@@ -475,35 +481,33 @@ class DiskDescriptor:
 
         return cls(descriptor_settings, extents, disk_db, sectors, vmdk_config)
 
-    def __str__(self):
-        str_template = """\
-                          # Disk DescriptorFile
-                          version=1
-                          {}
+    def __str__(self) -> str:
+        str_template = textwrap.dedent(
+            """\
+        # Disk DescriptorFile
+        version=1
+        {}
 
-                          # Extent Description
-                          {}
+        # Extent Description
+        {}
 
-                          # The Disk Data Base
-                          #DDB
+        # The Disk Data Base
+        #DDB
 
-                          {}"""
-        str_template = textwrap.dedent(str_template)
+        {}"""
+        )
+
         descriptor_settings = []
         for setting, value in self.attr.items():
-            if setting == "version":
-                continue
-            descriptor_settings.append("{}={}".format(setting, value))
+            if setting != "version":
+                descriptor_settings.append(f"{setting}={value}")
         descriptor_settings = "\n".join(descriptor_settings)
 
-        extents = []
-        for extent in self.extents:
-            extents.append('{} {} {} "{}"'.format(extent.access_mode, extent.sectors, extent.type, extent.filename))
-        extents = "\n".join(extents)
+        extents = "\n".join([extent.__str__() for extent in self.extents])
 
         disk_db = []
         for setting, value in self.ddb.items():
-            disk_db.append('{} = "{}"'.format(setting, value))
+            disk_db.append(f'{setting} = "{value}"')
         disk_db = "\n".join(disk_db)
 
         return str_template.format(descriptor_settings, extents, disk_db)
