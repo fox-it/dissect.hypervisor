@@ -462,7 +462,7 @@ class DiskDescriptor:
                 parts = line.split(" ", maxsplit=6)
 
                 if len(parts) < 3:
-                    log.error("Unexpected ExtentDescriptor format in vmdk config: %s", line)
+                    log.warning("Unexpected ExtentDescriptor format in vmdk config: %s, ignoring", line)
                     continue
 
                 extent = ExtentDescriptor(*parts)
@@ -503,7 +503,7 @@ class DiskDescriptor:
                 descriptor_settings.append(f"{setting}={value}")
         descriptor_settings = "\n".join(descriptor_settings)
 
-        extents = "\n".join([extent.__str__() for extent in self.extents])
+        extents = "\n".join(map(str, self.extents))
 
         disk_db = []
         for setting, value in self.ddb.items():

@@ -89,5 +89,5 @@ def test_vmdk_extent_description(extent_description: str, expected_extents: list
         - https://github.com/libyal/libvmdk/blob/main/documentation/VMWare%20Virtual%20Disk%20Format%20(VMDK).asciidoc#22-extent-descriptions
     """  # noqa: E501
 
-    descriptor: DiskDescriptor = DiskDescriptor.parse(extent_description)
+    descriptor = DiskDescriptor.parse(extent_description)
     assert descriptor.extents == expected_extents
