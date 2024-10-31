@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 from dissect.hypervisor.backup.c_vma import c_vma
-from dissect.hypervisor.backup.vbk import VBK
+from dissect.hypervisor.backup.vbk import VBK, DirItem
 from dissect.hypervisor.backup.vma import VMA, _iter_mask
 
 try:
@@ -144,20 +144,22 @@ def extract_vma(vma: VMA, out_dir: Path) -> None:
 
 
 def extract_vbk(vbk: VBK, out_dir: Path) -> None:
-    with progress:
-        try:
-            root_dir = next(vbk.get("/").iterdir())
-            out_dir = out_dir.joinpath(root_dir.name)
-            out_dir.mkdir(exist_ok=True)
-
-            for entry in root_dir.iterdir():
-                out_file = out_dir.joinpath(entry.name)
+    def extract_directory(directory: DirItem, out_dir: Path) -> None:
+        out_dir.mkdir(exist_ok=True)
+        for entry in directory.iterdir():
+            out_path = out_dir.joinpath(entry.name)
+            if entry.is_dir():
+                extract_directory(entry, out_path)
+            else:
                 task_id = progress.add_task("extract", filename=entry.name, total=entry.size)
-
-                with entry.open() as fh_in, out_file.open("wb") as fh_out:
+                with entry.open() as fh_in, out_path.open("wb") as fh_out:
                     for chunk in iter(lambda: fh_in.read(vbk.block_size), b""):
                         fh_out.write(chunk)
                         progress.update(task_id, advance=len(chunk))
+
+    with progress:
+        try:
+            extract_directory(vbk.get("/"), out_dir)
         except Exception as e:
             log.exception("Exception during extraction")
             log.debug("", exc_info=e)

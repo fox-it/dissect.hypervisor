@@ -5,21 +5,16 @@ from __future__ import annotations
 
 from functools import cached_property, lru_cache
 from io import BytesIO
-from typing import BinaryIO, Generic, Iterator, Optional, TypeVar
+from typing import BinaryIO, Generic, Iterator, TypeVar
 from zlib import crc32
 
 from dissect.cstruct import Structure
+from dissect.hypervisor.backup.c_vbk import c_vbk
+from dissect.hypervisor.exceptions import Error
+from dissect.util.compression import lz4
 from dissect.util.crc32c import crc32c
 from dissect.util.stream import AlignedStream
 from dissect.util.xmemoryview import xmemoryview
-
-try:
-    from lz4.block import decompress as lz4_decompress
-except ImportError:
-    from dissect.util.compression.lz4 import decompress as lz4_decompress
-
-from dissect.hypervisor.backup.c_vbk import c_vbk
-from dissect.hypervisor.exceptions import Error
 
 PAGE_SIZE = 4096
 """VBK page size."""
@@ -108,7 +103,7 @@ class VBK:
         """
         return self.active_slot._get_meta_blob(page)
 
-    def get(self, path: str, item: Optional[DirItem] = None) -> DirItem:
+    def get(self, path: str, item: DirItem | None = None) -> DirItem:
         """Get a directory item from the VBK file."""
         item = item or self.root
 
@@ -351,7 +346,7 @@ class DirItem(MetaItem):
         raise VBKError(f"Size not available for {self!r}")
 
     @cached_property
-    def properties(self) -> Optional[PropertiesDictionary]:
+    def properties(self) -> PropertiesDictionary | None:
         """The properties of the directory item, if it has them."""
         if self.entry.PropsRootPage == -1:
             return None
@@ -360,7 +355,7 @@ class DirItem(MetaItem):
 
     def is_dir(self) -> bool:
         """Return whether the directory item is a directory."""
-        return isinstance(self, (RootDirectory, SubFolderItem))
+        return False
 
     def is_file(self) -> bool:
         """Return whether the directory item is a file."""
@@ -368,17 +363,14 @@ class DirItem(MetaItem):
 
     def is_internal_file(self) -> bool:
         """Return whether the directory item is an internal file."""
-        return isinstance(self, IntFibItem)
+        return False
 
     def is_external_file(self) -> bool:
         """Return whether the directory item is an external file."""
-        return isinstance(self, ExtFibItem)
+        return False
 
     def listdir(self) -> dict[str, DirItem]:
         """Return a dictionary of the items in the directory."""
-        if not self.is_dir():
-            raise NotADirectoryError(f"{self!r} is not a directory")
-
         return {item.name: item for item in self.iterdir()}
 
     def iterdir(self) -> Iterator[DirItem]:
@@ -402,6 +394,9 @@ class RootDirectory(DirItem):
     def __repr__(self) -> str:
         return f"<RootDirectory root={self.root} count={self.count}>"
 
+    def is_dir(self) -> bool:
+        return True
+
     def iterdir(self) -> Iterator[DirItem]:
         yield from MetaVector(self.vbk, DirItem, self.root, self.count)
 
@@ -422,6 +417,9 @@ class SubFolderItem(DirItem):
     def __repr__(self) -> str:
         return f"<SubFolderItem name={self.name!r} root={self.root} count={self.count}>"
 
+    def is_dir(self) -> bool:
+        return True
+
     def iterdir(self) -> Iterator[DirItem]:
         yield from MetaVector(self.vbk, DirItem, self.root, self.count)
 
@@ -440,6 +438,9 @@ class ExtFibItem(DirItem):
     @cached_property
     def size(self) -> int:
         return self.entry.ExtFib.FibSize
+
+    def is_external_file(self) -> bool:
+        return True
 
 
 class IntFibItem(DirItem):
@@ -460,6 +461,9 @@ class IntFibItem(DirItem):
     def size(self) -> int:
         return self.entry.IntFib.FibSize
 
+    def is_internal_file(self) -> bool:
+        return True
+
     def open(self) -> FibStream:
         return FibStream(
             self.vbk,
@@ -477,12 +481,12 @@ class PatchItem(DirItem):
         - **TODO**: CPatchMeta
     """
 
+    def __repr__(self) -> str:
+        return f"<PatchItem name={self.name!r} size={self.size}>"
+
     @cached_property
     def size(self) -> int:
         return self.entry.Patch.FibSize
-
-    def __repr__(self) -> str:
-        return f"<PatchItem name={self.name!r} size={self.size}>"
 
 
 class IncrementItem(DirItem):
@@ -493,12 +497,12 @@ class IncrementItem(DirItem):
         - **TODO**: CIncrementMeta
     """
 
+    def __repr__(self) -> str:
+        return f"<IncrementItem name={self.name!r} size={self.size}>"
+
     @cached_property
     def size(self) -> int:
         return self.entry.Increment.FibSize
-
-    def __repr__(self) -> str:
-        return f"<IncrementItem name={self.name!r} size={self.size}>"
 
 
 class MetaTableDescriptor(MetaItem):
@@ -1030,7 +1034,7 @@ class FibStream(AlignedStream):
                 if block.is_compressed():
                     if block.compression_type == c_vbk.CompressionType.LZ4:
                         # First 12 bytes are Lz4BlockHeader
-                        buf = lz4_decompress(memoryview(buf)[12:], block.source_size)
+                        buf = lz4.decompress(memoryview(buf)[12:], block.source_size)
                     else:
                         raise VBKError(f"Unsupported compression type: {block.compression_type}")
 
