@@ -35,10 +35,6 @@ class NotADirectoryError(VBKError):
 class VBK:
     """Veeam Backup (VBK) file implementation.
 
-    Args:
-        fh: The file handle of the VBK file to read.
-        verify: Whether to verify checksums.
-
     References:
         - CMeta
         - CStgFormat
@@ -46,6 +42,10 @@ class VBK:
     Notes:
         - **TODO**: Encryption
         - **TODO**: Incrememental backups
+
+    Args:
+        fh: The file handle of the VBK file to read.
+        verify: Whether to verify checksums.
     """
 
     def __init__(self, fh: BinaryIO, verify: bool = True):
@@ -95,7 +95,7 @@ class VBK:
         """
         return self.active_slot.page(idx)
 
-    def read_meta_blob(self, page: int) -> bytes:
+    def get_meta_blob(self, page: int) -> MetaBlob:
         """Read a meta blob from the VBK file.
 
         Args:
@@ -124,10 +124,6 @@ class VBK:
 class SnapshotSlot:
     """A snapshot slot in the VBK file.
 
-    Args:
-        vbk: The VBK object that the snapshot slot is part of.
-        offset: The offset of the snapshot slot in the file.
-
     References:
         - CSlotHdr
         - SSnapshotDescriptor
@@ -142,6 +138,10 @@ class SnapshotSlot:
         - **TODO**: Free blocks index (CFreeBlocksIndex, SFreeBlockIndexItem)
         - **TODO**: Deduplication index (CDedupIndex, SDedupIndexItem)
         - **TODO**: Crypto store (CCryptoStore, SCryptoStoreRec)
+
+    Args:
+        vbk: The VBK object that the snapshot slot is part of.
+        offset: The offset of the snapshot slot in the file.
     """
 
     def __init__(self, vbk: VBK, offset: int):
@@ -214,41 +214,26 @@ class SnapshotSlot:
         """
         return self.banks[page >> 32].page(page & 0xFFFFFFFF)
 
-    def _get_meta_blob(self, page: int) -> bytes:
-        """Read a meta blob from the snapshot slot.
-
-        A meta blob is a list of pages that are linked together. Each page has a header (``MetaBlobHeader``) with
-        a ``NextPage`` field that points to the next page in the blob. The last page has a ``NextPage`` field of -1.
+    def _get_meta_blob(self, page: int) -> MetaBlob:
+        """Get a meta blob from the snapshot slot.
 
         Args:
             page: The page of the first page in the meta blob.
-
-        References:
-            - CMetaBlobRW
         """
-        result = []
-
-        while page != -1:
-            buf = self.page(page)
-            result.append(buf)
-
-            # Read the next page from the header
-            page = int.from_bytes(buf[:8], "little", signed=True)
-
-        return b"".join(result)
+        return MetaBlob(self, page)
 
 
 class Bank:
     """A bank in the snapshot slot. A bank is a collection of pages.
 
+    References:
+        - SBankHdr
+        - CBankHdrPage
+
     Args:
         vbk: The VBK object that the bank is part of.
         offset: The offset of the bank in the file.
         size: The size of the bank in the file.
-
-    References:
-        - SBankHdr
-        - CBankHdrPage
     """
 
     def __init__(self, vbk: VBK, offset: int, size: int):
@@ -748,20 +733,20 @@ class StgBlockDescriptorV7(StgBlockDescriptor):
 class PropertiesDictionary(dict):
     """A dictionary of properties in the VBK file.
 
-    Args:
-        vbk: The VBK object that the properties dictionary is part of.
-        page: The page number of the meta blob of the properties dictionary.
-
     References:
         - CPropsDictionary
         - CDirElemPropsRW
+
+    Args:
+        vbk: The VBK object that the properties dictionary is part of.
+        page: The page number of the meta blob of the properties dictionary.
     """
 
     def __init__(self, vbk: VBK, page: int):
         self.vbk = vbk
         self.page = page
 
-        buf = BytesIO(self.vbk.read_meta_blob(page))
+        buf = BytesIO(self.vbk.get_meta_blob(page).data())
         buf.seek(len(c_vbk.MetaBlobHeader))
 
         while True:
@@ -790,20 +775,57 @@ class PropertiesDictionary(dict):
             self[name] = value
 
 
+class MetaBlob:
+    """A meta blob in the VBK file.
+
+    A meta blob is a list of pages that are linked together. Each page has a header (``MetaBlobHeader``) with
+    a ``NextPage`` field that points to the next page in the blob. The last page has a ``NextPage`` field of -1.
+
+    References:
+        - CMetaBlobRW
+
+    Args:
+        slot: The snapshot slot that the meta blob is part of.
+        root: The page number of the first page in the meta blob.
+    """
+
+    def __init__(self, slot: SnapshotSlot, root: int):
+        self.slot = slot
+        self.root = root
+
+    def __repr__(self) -> str:
+        return f"<MetaBlob root={self.root}>"
+
+    def _read(self) -> Iterator[int, memoryview]:
+        page = self.root
+
+        while page != -1:
+            buf = self.slot.page(page)
+            yield page, buf
+
+            page = int.from_bytes(buf[:8], "little", signed=True)
+
+    def pages(self) -> Iterator[int]:
+        return (page for page, _ in self._read())
+
+    def data(self) -> bytes:
+        return b"".join(buf for _, buf in self._read())
+
+
 T = TypeVar("T", bound=MetaItem)
 
 
 class MetaVector(Generic[T]):
     """A vector of meta items in the VBK file.
 
+    References:
+        - CMetaVec
+
     Args:
         vbk: The VBK object that the vector is part of.
         type_: The type of the items in the vector.
         page: The page number of the first page in the vector.
         count: The number of items in the vector.
-
-    References:
-        - CMetaVec
     """
 
     def __new__(cls, vbk: VBK, *args, **kwargs):
@@ -819,13 +841,7 @@ class MetaVector(Generic[T]):
 
         self._entry_size = len(self.type.__struct__)
         self._entries_per_page = PAGE_SIZE // self._entry_size
-        self._pages = []
-
-        while page != -1:
-            self._pages.append(page)
-
-            buf = self.vbk.page(page)
-            page = int.from_bytes(buf[:8], "little", signed=True)
+        self._pages = list(self.vbk.get_meta_blob(page).pages())
 
         self.get = lru_cache(128)(self.get)
 
@@ -863,27 +879,33 @@ class MetaVector(Generic[T]):
 class MetaVector2(MetaVector[T]):
     """A vector of meta items in the VBK file. Version 2.
 
+    MetaVector2 is essentially a table of page numbers that contain the vector entries.
+    The table pages of a MetaVector2 have a 8-32 byte header, so we can hold a maximum of 508-511 entries per page.
+    Read the comments in _lookup_page for more information.
+
+    References:
+        - CMetaVec2
+
     Args:
         vbk: The VBK object that the vector is part of.
         type_: The type of the items in the vector.
         page: The page number of the first page in the vector.
         count: The number of items in the vector.
-
-    References:
-        - CMetaVec2
     """
 
-    # MetaVector2 is essentially a table of page numbers that contain the vector entries
-    # The table pages of a MetaVector2 have a 8-16 byte header, so we can hold a maximum of 510-511 entries per page
-    # Read the comments in _lookup_page for more information
-    MAX_TABLE_ENTRIES_PER_PAGE = (PAGE_SIZE - 8) // 8
+    _MAX_TABLE_ENTRIES_PER_PAGE = PAGE_SIZE // 8
+    _MAX_TABLE_ENTRIES_LOOKUP = (
+        _MAX_TABLE_ENTRIES_PER_PAGE - 1,
+        _MAX_TABLE_ENTRIES_PER_PAGE - 4,
+        _MAX_TABLE_ENTRIES_PER_PAGE - 1,
+    )
 
     def __init__(self, vbk: VBK, type_: type[T], page: int, count: int):
         super().__init__(vbk, type_, page, count)
 
         # It's not actually a meta blob, but the same mechanism is used (next page pointer in the header)
         # The table itself is essentially a big array of 64 bit integers, so cast it to a memoryview of that
-        self._table = xmemoryview(self.vbk.read_meta_blob(page), "<q")
+        self._table = xmemoryview(self.vbk.get_meta_blob(page).data(), "<q")
         self._lookup_page = lru_cache(128)(self._lookup_page)
 
     def _lookup_page(self, idx: int) -> int:
@@ -892,7 +914,6 @@ class MetaVector2(MetaVector[T]):
         Args:
             idx: The page index to lookup the page number for.
         """
-        page_id = idx + 1
 
         # MetaVec2 pages are a little special
         # The first page has a 16 byte header:
@@ -909,20 +930,22 @@ class MetaVector2(MetaVector[T]):
         # We've not seen a table large enough to see this repeat more than once, but presumably it does
         #
         # This means that the first page can hold 510 entries, the second 508, and the third and fourth 511 each
-        # Reverse engineering gives us this funny looking loop, but it works, so use it for now
-        if page_id > self.MAX_TABLE_ENTRIES_PER_PAGE - 1:
-            page_id_offset = 1
-            while True:
-                prev_page_id_offset = page_id_offset
-                page_id_offset *= 4
+        # The fifth page can hold 508 entries again, and so on
 
-                if (4 * (self.MAX_TABLE_ENTRIES_PER_PAGE - 1)) * prev_page_id_offset >= page_id:
-                    break
+        if idx < self._MAX_TABLE_ENTRIES_PER_PAGE - 2:
+            return self._table[idx + 2]  # Skip the header
 
-            page_id = page_id_offset + idx
+        idx -= self._MAX_TABLE_ENTRIES_PER_PAGE - 2
+        table_idx = 1
+        while True:
+            max_entries = self._MAX_TABLE_ENTRIES_LOOKUP[table_idx % 3]
 
-        table_id, page_id_in_table = divmod(page_id, self.MAX_TABLE_ENTRIES_PER_PAGE)
-        return self._table[table_id * (PAGE_SIZE // 8) + 1 + page_id_in_table]
+            if idx < max_entries:
+                table_offset = table_idx * self._MAX_TABLE_ENTRIES_PER_PAGE
+                return self._table[table_offset + (self._MAX_TABLE_ENTRIES_PER_PAGE - max_entries) + idx]
+
+            idx -= max_entries
+            table_idx += 1
 
     def data(self, idx: int) -> bytes:
         """Read the data for an entry in the vector.
@@ -940,13 +963,13 @@ class MetaVector2(MetaVector[T]):
 class FibMetaSparseTable:
     """A sparse table of FIB (File In Backup) blocks in the VBK file.
 
+    References:
+        - CFibMetaSparseTable
+
     Args:
         vbk: The VBK object that the sparse table is part of.
         page: The page number of the first page in the table.
         count: The number of entries in the table.
-
-    References:
-        - CFibMetaSparseTable
     """
 
     # This seems hardcoded? Probably calculated from something but unknown for now

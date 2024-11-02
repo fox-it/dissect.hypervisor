@@ -1,7 +1,9 @@
 import hashlib
+import struct
 from typing import BinaryIO
+from unittest.mock import Mock
 
-from dissect.hypervisor.backup.vbk import VBK, MetaVector, MetaVector2
+from dissect.hypervisor.backup.vbk import PAGE_SIZE, VBK, MetaBlob, MetaTableDescriptor, MetaVector, MetaVector2
 
 
 def test_vbk_version_9(vbk9: BinaryIO) -> None:
@@ -73,3 +75,44 @@ def test_vbk_version_13(vbk13: BinaryIO) -> None:
     with entry.open() as fh:
         digest = hashlib.sha256(fh.read()).hexdigest()
         assert digest == "e9ed281cf9c2fe1745e4eb9c926c1a64bd47569c48be511c5fdf6fd5793e5a77"
+
+
+def test_metavector2_lookup() -> None:
+    """test that the lookup logic in MetaVector2 works as expected"""
+
+    tmp = []
+    entry = 0
+    num_pages = 11
+    for i in range(num_pages):
+        if i == 0:
+            # root page
+            header = struct.pack("<qq", i + 1, 0)
+        elif i % 3 == 1:
+            # "first" page
+            header = struct.pack(
+                "<qqqq",
+                i + 1 if i + 1 < num_pages else -1,
+                i,
+                i + 1 if i + 1 < num_pages else -1,
+                i + 2 if i + 2 < num_pages else -1,
+            )
+        else:
+            # "middle" pages
+            header = struct.pack("<q", i + 1 if i + 1 < num_pages else -1)
+
+        num_entries = (PAGE_SIZE // 8) - (len(header) // 8)
+        data = struct.pack(f"<{num_entries}q", *range(entry, entry + num_entries))
+        tmp.append(header + data)
+        entry += num_entries
+
+    mock_blob = b"".join(tmp)
+
+    mock_slot = Mock()
+    mock_slot.page = lambda page: mock_blob[page * PAGE_SIZE : (page + 1) * PAGE_SIZE]
+    mock_vbk = Mock(format_version=13)
+    mock_vbk.get_meta_blob = lambda page: MetaBlob(mock_slot, page)
+    vec = MetaVector2(mock_vbk, MetaTableDescriptor, 0, 4096)
+    assert isinstance(vec, MetaVector2)
+
+    for i in range(entry):
+        assert vec._lookup_page(i) == i
