@@ -39,7 +39,6 @@ repository = "https://github.com/fox-it/dissect.hypervisor"
 [project.optional-dependencies]
 full = [
     "pycryptodome",
-    "rich",
 ]
 dev = [
     "dissect.hypervisor[full]",
@@ -48,7 +47,6 @@ dev = [
 ]
 
 [project.scripts]
-vma-extract = "dissect.hypervisor.tools.vma:main"
 envelope-decrypt = "dissect.hypervisor.tools.envelope:main"
 
 [tool.black]
