@@ -80,11 +80,6 @@ def split_hdd() -> Iterator[str]:
 
 
 @pytest.fixture
-def simple_vma() -> Iterator[BinaryIO]:
-    yield from open_file_gz("data/test.vma.gz")
-
-
-@pytest.fixture
 def envelope() -> Iterator[BinaryIO]:
     yield from open_file("data/local.tgz.ve")
 
