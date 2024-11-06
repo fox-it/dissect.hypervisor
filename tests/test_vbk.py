@@ -80,7 +80,7 @@ def test_vbk_version_13(vbk13: BinaryIO) -> None:
 def test_metavector2_lookup() -> None:
     """test that the lookup logic in MetaVector2 works as expected"""
 
-    tmp = []
+    raw_blob = []
     entry = 0
     num_pages = 11
     for i in range(num_pages):
