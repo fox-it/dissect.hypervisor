@@ -108,8 +108,48 @@ def test_vmdk_sesparse(sesparse_vmdk):
                 )
             ],
         ),
+        (
+            'RW 1234567890 SPARSE "disk with spaces.vmdk" 123 part-uuid',
+            [
+                ExtentDescriptor(
+                    access_mode="RW",
+                    sectors=1234567890,
+                    type="SPARSE",
+                    filename='"disk with spaces.vmdk"',
+                    start_sector=123,
+                    partition_uuid="part-uuid",
+                    device_identifier=None,
+                )
+            ],
+        ),
+        (
+            'RW 1234567890 SPARSE "disk with spaces.vmdk" 123 part-uuid device-id',
+            [
+                ExtentDescriptor(
+                    access_mode="RW",
+                    sectors=1234567890,
+                    type="SPARSE",
+                    filename='"disk with spaces.vmdk"',
+                    start_sector=123,
+                    partition_uuid="part-uuid",
+                    device_identifier="device-id",
+                )
+            ],
+        ),
     ],
-    ids=("sparse", "flat", "zero", "sparse-ids", "bad-1", "bad-2", "bad-3", "spaces-three-parts", "spaces-more-parts"),
+    ids=(
+        "sparse",
+        "flat",
+        "zero",
+        "sparse-ids",
+        "bad-1",
+        "bad-2",
+        "bad-3",
+        "spaces-four-parts",
+        "spaces-five-parts",
+        "spaces-six-parts",
+        "spaces-seven-parts",
+    ),
 )
 def test_vmdk_extent_description(extent_description: str, expected_extents: list) -> None:
     """test if we correctly parse VMDK sparse and flat extent descriptions.
