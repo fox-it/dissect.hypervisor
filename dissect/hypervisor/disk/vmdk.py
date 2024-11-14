@@ -4,6 +4,7 @@ import ctypes
 import io
 import logging
 import os
+import re
 import textwrap
 import zlib
 from bisect import bisect_right
@@ -401,6 +402,22 @@ class SparseExtentHeader:
         return getattr(self.hdr, attr)
 
 
+RE_EXTENT_DESCRIPTOR = re.compile(
+    r"""
+    ^
+    (?P<access_mode>RW|RDONLY|NOACCESS)\s
+    (?P<sectors>\d+)\s
+    (?P<type>SPARSE|ZERO|FLAT|VMFS|VMFSSPARSE|VMFSRDM|VMFSRAW)
+    (\s?(?P<filename>\".+\")\s?)?
+    (\s?(?P<start_sector>\d+)\s?)?
+    (\s?(?P<partition_uuid>\S+)\s?)?
+    (?P<device_identifier>\S+)?
+    $
+    """,
+    re.VERBOSE,
+)
+
+
 @dataclass
 class ExtentDescriptor:
     access_mode: str
@@ -458,14 +475,13 @@ class DiskDescriptor:
                 continue
 
             if line.startswith("RW ") or line.startswith("RDONLY ") or line.startswith("NOACCESS "):
-                # Extent descriptors can have up to seven values according to libvmdk documentation.
-                parts = line.split(" ", maxsplit=6)
+                match = RE_EXTENT_DESCRIPTOR.search(line)
 
-                if len(parts) < 3:
+                if not match:
                     log.warning("Unexpected ExtentDescriptor format in vmdk config: %s, ignoring", line)
                     continue
 
-                extent = ExtentDescriptor(*parts)
+                extent = ExtentDescriptor(**match.groupdict())
                 sectors += extent.sectors
                 extents.append(extent)
                 continue
