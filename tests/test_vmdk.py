@@ -29,6 +29,7 @@ def test_vmdk_sesparse(sesparse_vmdk):
             'RW 123456789 SPARSE "disk.vmdk"',
             [
                 ExtentDescriptor(
+                    raw='RW 123456789 SPARSE "disk.vmdk"',
                     access_mode="RW",
                     sectors=123456789,
                     type="SPARSE",
@@ -43,6 +44,7 @@ def test_vmdk_sesparse(sesparse_vmdk):
             'RW 123456789 FLAT "disk-flat.vmdk" 0',
             [
                 ExtentDescriptor(
+                    raw='RW 123456789 FLAT "disk-flat.vmdk" 0',
                     access_mode="RW",
                     sectors=123456789,
                     type="FLAT",
@@ -57,6 +59,7 @@ def test_vmdk_sesparse(sesparse_vmdk):
             "RDONLY 0 ZERO",
             [
                 ExtentDescriptor(
+                    raw="RDONLY 0 ZERO",
                     access_mode="RDONLY",
                     sectors=0,
                     type="ZERO",
@@ -67,6 +70,7 @@ def test_vmdk_sesparse(sesparse_vmdk):
             'NOACCESS 123456789 SPARSE "disk-sparse.vmdk" 123 partition-uuid device-id',
             [
                 ExtentDescriptor(
+                    raw='NOACCESS 123456789 SPARSE "disk-sparse.vmdk" 123 partition-uuid device-id',
                     access_mode="NOACCESS",
                     sectors=123456789,
                     type="SPARSE",
@@ -84,6 +88,7 @@ def test_vmdk_sesparse(sesparse_vmdk):
             'RW 1234567890 SPARSE "disk with spaces.vmdk"',
             [
                 ExtentDescriptor(
+                    raw='RW 1234567890 SPARSE "disk with spaces.vmdk"',
                     access_mode="RW",
                     sectors=1234567890,
                     type="SPARSE",
@@ -98,6 +103,7 @@ def test_vmdk_sesparse(sesparse_vmdk):
             'RW 1234567890 SPARSE "disk with spaces.vmdk" 123',
             [
                 ExtentDescriptor(
+                    raw='RW 1234567890 SPARSE "disk with spaces.vmdk" 123',
                     access_mode="RW",
                     sectors=1234567890,
                     type="SPARSE",
@@ -112,6 +118,7 @@ def test_vmdk_sesparse(sesparse_vmdk):
             'RW 1234567890 SPARSE "disk with spaces.vmdk" 123 part-uuid',
             [
                 ExtentDescriptor(
+                    raw='RW 1234567890 SPARSE "disk with spaces.vmdk" 123 part-uuid',
                     access_mode="RW",
                     sectors=1234567890,
                     type="SPARSE",
@@ -126,6 +133,7 @@ def test_vmdk_sesparse(sesparse_vmdk):
             'RW 1234567890 SPARSE "disk with spaces.vmdk" 123 part-uuid device-id',
             [
                 ExtentDescriptor(
+                    raw='RW 1234567890 SPARSE "disk with spaces.vmdk" 123 part-uuid device-id',
                     access_mode="RW",
                     sectors=1234567890,
                     type="SPARSE",
@@ -140,6 +148,7 @@ def test_vmdk_sesparse(sesparse_vmdk):
             r'RW 16777216 SPARSE "this is an example "\' diskëäô:)\\\'`\foo.vmdk" 123',
             [
                 ExtentDescriptor(
+                    raw=r'RW 16777216 SPARSE "this is an example "\' diskëäô:)\\\'`\foo.vmdk" 123',
                     access_mode="RW",
                     sectors=16777216,
                     type="SPARSE",
@@ -154,6 +163,7 @@ def test_vmdk_sesparse(sesparse_vmdk):
             r'RW 13371337 SPARSE "🦊 🦊 🦊.vmdk"',
             [
                 ExtentDescriptor(
+                    raw=r'RW 13371337 SPARSE "🦊 🦊 🦊.vmdk"',
                     access_mode="RW",
                     sectors=13371337,
                     type="SPARSE",

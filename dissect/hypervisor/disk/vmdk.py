@@ -420,6 +420,7 @@ RE_EXTENT_DESCRIPTOR = re.compile(
 
 @dataclass
 class ExtentDescriptor:
+    raw: str
     access_mode: str
     sectors: int
     type: str
@@ -429,7 +430,6 @@ class ExtentDescriptor:
     device_identifier: str | None = None
 
     def __post_init__(self) -> None:
-        self._raw = " ".join(map(str, [v for v in self.__dict__.values() if v is not None]))
         self.sectors = int(self.sectors)
 
         if self.filename:
@@ -439,10 +439,10 @@ class ExtentDescriptor:
             self.start_sector = int(self.start_sector)
 
     def __repr__(self) -> str:
-        return f"<ExtentDescriptor {self._raw}>"
+        return f"<ExtentDescriptor {self.raw}>"
 
     def __str__(self) -> str:
-        return self._raw
+        return self.raw
 
 
 class DiskDescriptor:
@@ -481,7 +481,7 @@ class DiskDescriptor:
                     log.warning("Unexpected ExtentDescriptor format in vmdk config: %s, ignoring", line)
                     continue
 
-                extent = ExtentDescriptor(**match.groupdict())
+                extent = ExtentDescriptor(raw=line, **match.groupdict())
                 sectors += extent.sectors
                 extents.append(extent)
                 continue
