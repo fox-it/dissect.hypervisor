@@ -136,6 +136,31 @@ def test_vmdk_sesparse(sesparse_vmdk):
                 )
             ],
         ),
+        (
+            r'RW 16777216 SPARSE "this is an example "\' diskëäô:)\\\'`\foo.vmdk" 123',
+            [
+                ExtentDescriptor(
+                    access_mode="RW",
+                    sectors=16777216,
+                    type="SPARSE",
+                    filename=r'"this is an example "\' diskëäô:)\\\'`\foo.vmdk"',
+                    start_sector=123,
+                    partition_uuid=None,
+                    device_identifier=None,
+                )
+            ],
+        ),
+        (
+            r'RW 13371337 SPARSE "🦊 🦊 🦊.vmdk"',
+            [
+                ExtentDescriptor(
+                    access_mode="RW",
+                    sectors=13371337,
+                    type="SPARSE",
+                    filename='"🦊 🦊 🦊.vmdk"',
+                )
+            ],
+        ),
     ],
     ids=(
         "sparse",
@@ -149,6 +174,8 @@ def test_vmdk_sesparse(sesparse_vmdk):
         "spaces-five-parts",
         "spaces-six-parts",
         "spaces-seven-parts",
+        "specials-five-parts",
+        "emoji-four-parts",
     ),
 )
 def test_vmdk_extent_description(extent_description: str, expected_extents: list) -> None:
