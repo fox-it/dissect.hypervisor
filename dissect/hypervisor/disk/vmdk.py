@@ -408,10 +408,10 @@ RE_EXTENT_DESCRIPTOR = re.compile(
     (?P<access_mode>RW|RDONLY|NOACCESS)\s
     (?P<sectors>\d+)\s
     (?P<type>SPARSE|ZERO|FLAT|VMFS|VMFSSPARSE|VMFSRDM|VMFSRAW)
-    (\s?(?P<filename>\".+\")\s?)?
-    (\s?(?P<start_sector>\d+)\s?)?
-    (\s?(?P<partition_uuid>\S+)\s?)?
-    (?P<device_identifier>\S+)?
+    (\s(?P<filename>\".+\"))?
+    (\s(?P<start_sector>\d+))?
+    (\s(?P<partition_uuid>\S+))?
+    (\s(?P<device_identifier>\S+))?
     $
     """,
     re.VERBOSE,
