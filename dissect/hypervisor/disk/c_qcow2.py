@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dissect.cstruct import cstruct
 
 qcow2_def = """
@@ -169,8 +171,9 @@ UNALLOCATED_SUBCLUSTER_TYPES = (
 )
 
 
-def ctz(value, size=32):
+def ctz(value: int, size: int = 32) -> int:
     """Count the number of zero bits in an integer of a given size."""
     for i in range(size):
         if value & (1 << i):
             return i
+    return 0

@@ -1,11 +1,16 @@
-from typing import Iterator, TextIO
-from xml.etree.ElementTree import Element
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Final, TextIO
 
 from defusedxml import ElementTree
 
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from xml.etree.ElementTree import Element
+
 
 class OVF:
-    NS = {
+    NS: Final[dict[str, str]] = {
         "ovf": "http://schemas.dmtf.org/ovf/envelope/1",
         "rasd": "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData",
     }
@@ -34,8 +39,7 @@ class OVF:
         for disk in self.xml.findall(self.DISK_DRIVE_XPATH, self.NS):
             resource = disk.find("{{{rasd}}}HostResource".format(**self.NS))
             xpath = resource.text
-            if xpath.startswith("ovf:"):
-                xpath = xpath[4:]
+            xpath = xpath.removeprefix("ovf:")
 
             if xpath.startswith("/disk/"):
                 disk_ref = xpath.split("/")[-1]

@@ -1,11 +1,13 @@
 # References:
 # - https://github.com/qemu/qemu/blob/master/block/qcow2.c
 # - https://github.com/qemu/qemu/blob/master/docs/interop/qcow2.txt
+from __future__ import annotations
 
 import copy
 import zlib
 from functools import cached_property, lru_cache
 from io import BytesIO
+from typing import TYPE_CHECKING, BinaryIO
 
 from dissect.util.stream import AlignedStream
 
@@ -20,6 +22,9 @@ from dissect.hypervisor.disk.c_qcow2 import (
     ctz,
 )
 from dissect.hypervisor.exceptions import Error, InvalidHeaderError
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 try:
     import zstandard as zstd
@@ -45,7 +50,7 @@ class QCow2(AlignedStream):
     in all null bytes being read.
     """
 
-    def __init__(self, fh, data_file=None, backing_file=None):
+    def __init__(self, fh: BinaryIO, data_file: BinaryIO | None = None, backing_file: BinaryIO | int | None = None):
         self.fh = fh
 
         self.header = c_qcow2.QCowHeader(fh)
@@ -120,7 +125,7 @@ class QCow2(AlignedStream):
 
         super().__init__(self.header.size)
 
-    def _read_extensions(self):
+    def _read_extensions(self) -> None:
         start_offset = self.header.header_length
         end_offset = self.header.backing_file_offset or 1 << self.cluster_bits
 
@@ -135,7 +140,8 @@ class QCow2(AlignedStream):
 
             if ext.magic == c_qcow2.QCOW2_EXT_MAGIC_END:
                 break
-            elif ext.magic == c_qcow2.QCOW2_EXT_MAGIC_BACKING_FORMAT:
+
+            if ext.magic == c_qcow2.QCOW2_EXT_MAGIC_BACKING_FORMAT:
                 self.backing_format = self.fh.read(ext.len).decode().upper()
                 self.image_backing_format = self.backing_format.upper()
             elif ext.magic == c_qcow2.QCOW2_EXT_MAGIC_FEATURE_TABLE:
@@ -153,7 +159,7 @@ class QCow2(AlignedStream):
             offset += (ext.len + 7) & 0xFFFFFFF8
 
     @cached_property
-    def snapshots(self):
+    def snapshots(self) -> list[QCow2Snapshot]:
         snapshots = []
 
         offset = self.header.snapshots_offset
@@ -164,46 +170,46 @@ class QCow2(AlignedStream):
         return snapshots
 
     @cached_property
-    def l1_table(self):
+    def l1_table(self) -> list[int]:
         # L1 table is usually relatively small, it can be at most 32MB on PB or EB size disks
         self.fh.seek(self.header.l1_table_offset)
         return c_qcow2.uint64[self.header.l1_size](self.fh)
 
-    def l2_table(self, l2_offset):
+    def l2_table(self, l2_offset: int) -> L2Table:
         return L2Table(self, l2_offset)
 
     @property
-    def has_backing_file(self):
+    def has_backing_file(self) -> bool:
         return self.backing_file is not None
 
     @property
-    def has_data_file(self):
+    def has_data_file(self) -> bool:
         return self.data_file != self.fh
 
     @property
-    def has_subclusters(self):
+    def has_subclusters(self) -> bool:
         return bool(self.header.incompatible_features & c_qcow2.QCOW2_INCOMPAT_EXTL2)
 
-    def _read(self, offset, length):
+    def _read(self, offset: int, length: int) -> bytes:
         result = []
 
-        for sc_type, offset, run_offset, run_length in self._yield_runs(offset, length):
+        for sc_type, read_offset, run_offset, run_length in self._yield_runs(offset, length):
             unalloc_zeroed = sc_type in UNALLOCATED_SUBCLUSTER_TYPES and not self.has_backing_file
 
             if sc_type in ZERO_SUBCLUSTER_TYPES or unalloc_zeroed:
                 result.append(b"\x00" * run_length)
             elif sc_type in UNALLOCATED_SUBCLUSTER_TYPES and self.has_backing_file:
-                self.backing_file.seek(offset)
+                self.backing_file.seek(read_offset)
                 result.append(self.backing_file.read(run_length))
             elif sc_type == QCow2SubclusterType.QCOW2_SUBCLUSTER_COMPRESSED:
-                result.append(self._read_compressed(run_offset, offset, run_length))
+                result.append(self._read_compressed(run_offset, read_offset, run_length))
             elif sc_type == QCow2SubclusterType.QCOW2_SUBCLUSTER_NORMAL:
                 self.data_file.seek(run_offset)
                 result.append(self.data_file.read(run_length))
 
         return b"".join(result)
 
-    def _read_compressed(self, cluster_descriptor, offset, length):
+    def _read_compressed(self, cluster_descriptor: int, offset: int, length: int) -> bytes:
         offset_in_cluster = offset_into_cluster(self, offset)
         coffset = cluster_descriptor & self.cluster_offset_mask
         nb_csectors = ((cluster_descriptor >> self.csize_shift) & self.csize_mask) + 1
@@ -217,11 +223,12 @@ class QCow2(AlignedStream):
 
         return decompressed[offset_in_cluster : offset_in_cluster + length]
 
-    def _decompress(self, buf):
+    def _decompress(self, buf: bytes) -> bytes:
         if self.compression_type == c_qcow2.QCOW2_COMPRESSION_TYPE_ZLIB:
             dctx = zlib.decompressobj(-12)
             return dctx.decompress(buf, self.cluster_size)
-        elif self.compression_type == c_qcow2.QCOW2_COMPRESSION_TYPE_ZSTD:
+
+        if self.compression_type == c_qcow2.QCOW2_COMPRESSION_TYPE_ZSTD:
             result = []
 
             dctx = zstd.ZstdDecompressor()
@@ -232,10 +239,10 @@ class QCow2(AlignedStream):
                     break
                 result.append(chunk)
             return b"".join(result)
-        else:
-            raise Error(f"Invalid compression type: {self.compression_type}")
 
-    def _yield_runs(self, offset, length):
+        raise Error(f"Invalid compression type: {self.compression_type}")
+
+    def _yield_runs(self, offset: int, length: int) -> Iterator[tuple[QCow2SubclusterType, int, int, int]]:
         # reference: qcow2_get_host_offset
         while length > 0:
             sc_type = None
@@ -303,7 +310,7 @@ class QCow2(AlignedStream):
 class L2Table:
     """Convenience class for accessing the L2 table."""
 
-    def __init__(self, qcow2, offset):
+    def __init__(self, qcow2: QCow2, offset: int):
         self.qcow2 = qcow2
         self.offset = offset
 
@@ -311,10 +318,10 @@ class L2Table:
         self.qcow2.fh.seek(offset)
         self._table = c_qcow2.uint64[l2_table_size](self.qcow2.fh)
 
-    def entry(self, idx):
+    def entry(self, idx: int) -> int:
         return self._table[idx * self.qcow2._l2_entry_size // 8]
 
-    def bitmap(self, idx):
+    def bitmap(self, idx: int) -> int:
         if self.qcow2.has_subclusters:
             return self._table[(idx * self.qcow2._l2_entry_size // 8) + 1]
         return 0
@@ -323,7 +330,7 @@ class L2Table:
 class QCow2Snapshot:
     """Wrapper class for snapshot table entries."""
 
-    def __init__(self, qcow2, offset):
+    def __init__(self, qcow2: QCow2, offset: int):
         self.qcow2 = qcow2
         self.offset = offset
 
@@ -343,64 +350,65 @@ class QCow2Snapshot:
 
         self.entry_size = self.qcow2.fh.tell() - offset
 
-    def open(self):
+    def open(self) -> QCow2:
         disk = copy.copy(self.qcow2)
         disk.l1_table = self.l1_table
         disk.seek(0)
         return disk
 
     @cached_property
-    def l1_table(self):
+    def l1_table(self) -> list[int]:
         # L1 table is usually relatively small, it can be at most 32MB on PB or EB size disks
         self.qcow2.fh.seek(self.header.l1_table_offset)
         return c_qcow2.uint64[self.header.l1_size](self.qcow2.fh)
 
 
-def offset_into_cluster(qcow2, offset):
+def offset_into_cluster(qcow2: QCow2, offset: int) -> int:
     return offset & (qcow2.cluster_size - 1)
 
 
-def offset_into_subcluster(qcow2, offset):
+def offset_into_subcluster(qcow2: QCow2, offset: int) -> int:
     return offset & (qcow2.subcluster_size - 1)
 
 
-def size_to_clusters(qcow2, size):
+def size_to_clusters(qcow2: QCow2, size: int) -> int:
     return (size + (qcow2.cluster_size - 1)) >> qcow2.cluster_bits
 
 
-def size_to_subclusters(qcow2, size):
+def size_to_subclusters(qcow2: QCow2, size: int) -> int:
     return (size + (qcow2.subcluster_size - 1)) >> qcow2.subcluster_bits
 
 
-def offset_to_l1_index(qcow2, offset):
+def offset_to_l1_index(qcow2: QCow2, offset: int) -> int:
     return offset >> (qcow2.l2_bits + qcow2.cluster_bits)
 
 
-def offset_to_l2_index(qcow2, offset):
+def offset_to_l2_index(qcow2: QCow2, offset: int) -> int:
     return (offset >> qcow2.cluster_bits) & (qcow2.l2_size - 1)
 
 
-def offset_to_sc_index(qcow2, offset):
+def offset_to_sc_index(qcow2: QCow2, offset: int) -> int:
     return (offset >> qcow2.subcluster_bits) & (qcow2.subclusters_per_cluster - 1)
 
 
-def get_cluster_type(qcow2, l2_entry):
+def get_cluster_type(qcow2: QCow2, l2_entry: int) -> QCow2ClusterType:
     if l2_entry & c_qcow2.QCOW_OFLAG_COMPRESSED:
         return QCow2ClusterType.QCOW2_CLUSTER_COMPRESSED
-    elif (l2_entry & c_qcow2.QCOW_OFLAG_ZERO) and not qcow2.has_subclusters:
+
+    if (l2_entry & c_qcow2.QCOW_OFLAG_ZERO) and not qcow2.has_subclusters:
         if l2_entry & c_qcow2.L2E_OFFSET_MASK:
             return QCow2ClusterType.QCOW2_CLUSTER_ZERO_ALLOC
         return QCow2ClusterType.QCOW2_CLUSTER_ZERO_PLAIN
-    elif not l2_entry & c_qcow2.L2E_OFFSET_MASK:
+
+    if not l2_entry & c_qcow2.L2E_OFFSET_MASK:
         if qcow2.has_data_file and l2_entry & c_qcow2.QCOW_OFLAG_COPIED:
             return QCow2ClusterType.QCOW2_CLUSTER_NORMAL
-        else:
-            return QCow2ClusterType.QCOW2_CLUSTER_UNALLOCATED
-    else:
-        return QCow2ClusterType.QCOW2_CLUSTER_NORMAL
+        return QCow2ClusterType.QCOW2_CLUSTER_UNALLOCATED
+
+    return QCow2ClusterType.QCOW2_CLUSTER_NORMAL
 
 
-def get_subcluster_type(qcow2, l2_entry, l2_bitmap, sc_index):
+def get_subcluster_type(qcow2: QCow2, l2_entry: int, l2_bitmap: int, sc_index: int) -> QCow2SubclusterType:
     c_type = get_cluster_type(qcow2, l2_entry)
 
     sc_alloc_mask = 1 << sc_index
@@ -409,40 +417,40 @@ def get_subcluster_type(qcow2, l2_entry, l2_bitmap, sc_index):
     if qcow2.has_subclusters:
         if c_type == QCow2ClusterType.QCOW2_CLUSTER_COMPRESSED:
             return QCow2SubclusterType.QCOW2_SUBCLUSTER_COMPRESSED
-        elif c_type == QCow2ClusterType.QCOW2_CLUSTER_NORMAL:
+        if c_type == QCow2ClusterType.QCOW2_CLUSTER_NORMAL:
             if (l2_bitmap >> 32) & l2_bitmap:
                 return QCow2SubclusterType.QCOW2_SUBCLUSTER_INVALID
-            elif l2_bitmap & sc_zero_mask:  # QCOW_OFLAG_SUB_ZERO(sc_index)
+            if l2_bitmap & sc_zero_mask:  # QCOW_OFLAG_SUB_ZERO(sc_index)
                 return QCow2SubclusterType.QCOW2_SUBCLUSTER_ZERO_ALLOC
-            elif l2_bitmap & sc_alloc_mask:  # QCOW_OFLAG_SUB_ALLOC(sc_index)
+            if l2_bitmap & sc_alloc_mask:  # QCOW_OFLAG_SUB_ALLOC(sc_index)
                 return QCow2SubclusterType.QCOW2_SUBCLUSTER_NORMAL
-            else:
-                return QCow2SubclusterType.QCOW2_SUBCLUSTER_UNALLOCATED_ALLOC
-        elif c_type == QCow2ClusterType.QCOW2_CLUSTER_UNALLOCATED:
+            return QCow2SubclusterType.QCOW2_SUBCLUSTER_UNALLOCATED_ALLOC
+        if c_type == QCow2ClusterType.QCOW2_CLUSTER_UNALLOCATED:
             if l2_bitmap & ((1 << 32) - 1):
                 return QCow2SubclusterType.QCOW2_SUBCLUSTER_INVALID
-            elif l2_bitmap & sc_zero_mask:  # QCOW_OFLAG_SUB_ZERO(sc_index)
+            if l2_bitmap & sc_zero_mask:  # QCOW_OFLAG_SUB_ZERO(sc_index)
                 return QCow2SubclusterType.QCOW2_SUBCLUSTER_ZERO_PLAIN
-            else:
-                return QCow2SubclusterType.QCOW2_SUBCLUSTER_UNALLOCATED_PLAIN
-        else:
-            raise Error(f"Invalid cluster type: {c_type}")
-    else:
-        if c_type == QCow2ClusterType.QCOW2_CLUSTER_COMPRESSED:
-            return QCow2SubclusterType.QCOW2_SUBCLUSTER_COMPRESSED
-        elif c_type == QCow2ClusterType.QCOW2_CLUSTER_ZERO_PLAIN:
-            return QCow2SubclusterType.QCOW2_SUBCLUSTER_ZERO_PLAIN
-        elif c_type == QCow2ClusterType.QCOW2_CLUSTER_ZERO_ALLOC:
-            return QCow2SubclusterType.QCOW2_SUBCLUSTER_ZERO_ALLOC
-        elif c_type == QCow2ClusterType.QCOW2_CLUSTER_NORMAL:
-            return QCow2SubclusterType.QCOW2_SUBCLUSTER_NORMAL
-        elif c_type == QCow2ClusterType.QCOW2_CLUSTER_UNALLOCATED:
             return QCow2SubclusterType.QCOW2_SUBCLUSTER_UNALLOCATED_PLAIN
-        else:
-            raise Error(f"Invalid cluster type: {c_type}")
+
+        raise Error(f"Invalid cluster type: {c_type}")
+
+    if c_type == QCow2ClusterType.QCOW2_CLUSTER_COMPRESSED:
+        return QCow2SubclusterType.QCOW2_SUBCLUSTER_COMPRESSED
+    if c_type == QCow2ClusterType.QCOW2_CLUSTER_ZERO_PLAIN:
+        return QCow2SubclusterType.QCOW2_SUBCLUSTER_ZERO_PLAIN
+    if c_type == QCow2ClusterType.QCOW2_CLUSTER_ZERO_ALLOC:
+        return QCow2SubclusterType.QCOW2_SUBCLUSTER_ZERO_ALLOC
+    if c_type == QCow2ClusterType.QCOW2_CLUSTER_NORMAL:
+        return QCow2SubclusterType.QCOW2_SUBCLUSTER_NORMAL
+    if c_type == QCow2ClusterType.QCOW2_CLUSTER_UNALLOCATED:
+        return QCow2SubclusterType.QCOW2_SUBCLUSTER_UNALLOCATED_PLAIN
+
+    raise Error(f"Invalid cluster type: {c_type}")
 
 
-def get_subcluster_range_type(qcow2, l2_entry, l2_bitmap, sc_from):
+def get_subcluster_range_type(
+    qcow2: QCow2, l2_entry: int, l2_bitmap: int, sc_from: int
+) -> tuple[QCow2SubclusterType, int]:
     sc_type = get_subcluster_type(qcow2, l2_entry, l2_bitmap, sc_from)
 
     # No subclusters, so count the entire cluster
@@ -452,21 +460,23 @@ def get_subcluster_range_type(qcow2, l2_entry, l2_bitmap, sc_from):
     sc_mask = (1 << sc_from) - 1
     if sc_type == QCow2SubclusterType.QCOW2_SUBCLUSTER_NORMAL:
         val = l2_bitmap | sc_mask  # QCOW_OFLAG_SUB_ALLOC_RANGE(0, sc_from)
-        return ctz(val, 32) - sc_from
-    elif sc_type in ZERO_SUBCLUSTER_TYPES:
+        return sc_type, ctz(val, 32) - sc_from
+    if sc_type in ZERO_SUBCLUSTER_TYPES:
         val = (l2_bitmap | sc_mask) >> 32  # QCOW_OFLAG_SUB_ZERO_RANGE(0, sc_from)
-        return ctz(val, 32) - sc_from
-    elif sc_type in UNALLOCATED_SUBCLUSTER_TYPES:
+        return sc_type, ctz(val, 32) - sc_from
+    if sc_type in UNALLOCATED_SUBCLUSTER_TYPES:
         # We need to mask it with a 64bit mask because Python flips the sign bit
         inv_mask = ~sc_mask & ((1 << 64) - 1)  # ~QCOW_OFLAG_SUB_ALLOC_RANGE(0, sc_from)
 
         val = ((l2_bitmap >> 32) | l2_bitmap) & inv_mask
-        return ctz(val, 32) - sc_from
-    else:
-        raise Error(f"Invalid subcluster type: {sc_type}")
+        return sc_type, ctz(val, 32) - sc_from
+
+    raise Error(f"Invalid subcluster type: {sc_type}")
 
 
-def count_contiguous_subclusters(qcow2, nb_clusters, sc_index, l2_table, l2_index):
+def count_contiguous_subclusters(
+    qcow2: QCow2, nb_clusters: int, sc_index: int, l2_table: L2Table, l2_index: int
+) -> int:
     count = 0
     expected_type = None
     expected_offset = None

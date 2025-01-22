@@ -1,7 +1,11 @@
+from __future__ import annotations
+
+from typing import BinaryIO
+
 from dissect.hypervisor.disk.vhd import VHD, DynamicDisk, FixedDisk
 
 
-def test_vhd_fixed(fixed_vhd):
+def test_vhd_fixed(fixed_vhd: BinaryIO) -> None:
     vhd = VHD(fixed_vhd)
     assert vhd.size == 10485760
     assert isinstance(vhd.disk, FixedDisk)
@@ -26,10 +30,10 @@ def test_vhd_fixed(fixed_vhd):
     )
 
     vhd.seek(0x200000)
-    assert vhd.read(512) == b"\xFF" * 512
+    assert vhd.read(512) == b"\xff" * 512
 
 
-def test_vhd_dynamic(dynamic_vhd):
+def test_vhd_dynamic(dynamic_vhd: BinaryIO) -> None:
     vhd = VHD(dynamic_vhd)
     assert vhd.size == 10485760
     assert isinstance(vhd.disk, DynamicDisk)
@@ -54,5 +58,5 @@ def test_vhd_dynamic(dynamic_vhd):
     )
 
     vhd.seek(0x200000)
-    assert vhd.read(512) == b"\xFF" * 512
+    assert vhd.read(512) == b"\xff" * 512
     assert vhd.disk.read_sectors(0x3FFF, 16) == (b"\x00" * 512 * 16)

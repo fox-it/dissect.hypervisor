@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from io import StringIO
 
 from dissect.hypervisor.descriptor.ovf import OVF
@@ -163,6 +165,6 @@ TEST_OVF = """<?xml version="1.0"?>
 """  # noqa
 
 
-def test_ovf():
+def test_ovf() -> None:
     ovf = OVF(StringIO(TEST_OVF))
     assert list(ovf.disks()) == ["disk1.vmdk", "disk2.vmdk", "disk3.vmdk"]

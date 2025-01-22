@@ -1,7 +1,7 @@
 # References:
 # - https://src.openvz.org/projects/OVZ/repos/ploop/browse/include/ploop1_image.h
 # - https://github.com/qemu/qemu/blob/master/docs/interop/parallels.txt
-
+from __future__ import annotations
 
 from dissect.cstruct import cstruct
 

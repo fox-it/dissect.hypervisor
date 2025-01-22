@@ -1,7 +1,11 @@
+from __future__ import annotations
+
+from typing import BinaryIO
+
 from dissect.hypervisor.util import vmtar
 
 
-def test_vmtar(vgz):
+def test_vmtar(vgz: BinaryIO) -> None:
     tar = vmtar.open(fileobj=vgz)
 
     members = {member.name: member for member in tar.getmembers()}

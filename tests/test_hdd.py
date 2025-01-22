@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import gzip
 from pathlib import Path
 from typing import BinaryIO
@@ -8,7 +10,7 @@ from dissect.hypervisor.disk.hdd import HDD
 Path_open = Path.open
 
 
-def mock_open_gz(self, *args, **kwargs) -> BinaryIO:
+def mock_open_gz(self: Path, *args, **kwargs) -> BinaryIO:
     if self.suffix.lower() != ".hds":
         return Path_open(self, *args, **kwargs)
 

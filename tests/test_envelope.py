@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import hashlib
+from typing import BinaryIO
 
 import pytest
 
@@ -10,7 +13,7 @@ from dissect.hypervisor.util.envelope import (
 )
 
 
-def test_envelope_keystore(keystore):
+def test_envelope_keystore(keystore: BinaryIO) -> None:
     store = KeyStore.from_text(keystore.read())
 
     assert store.store[".encoding"] == "UTF-8"
@@ -28,7 +31,7 @@ def test_envelope_keystore(keystore):
     assert store._key == bytes.fromhex("ae29634dca8627013f7c7cf2d05b4d5cc444d42cd4e8acbaa4fb815dda3b3066")
 
 
-def test_envelope(envelope):
+def test_envelope(envelope: BinaryIO) -> None:
     ev = Envelope(envelope)
 
     assert ev.key_info == "7e62cec5-6aef-4d7e-838b-cae32eefd251"
@@ -40,7 +43,7 @@ def test_envelope(envelope):
 
 
 @pytest.mark.skipif((not HAS_PYCRYPTODOME and not HAS_PYSTANDALONE), reason="No crypto module available")
-def test_envelope_decrypt(envelope, keystore):
+def test_envelope_decrypt(envelope: BinaryIO, keystore: BinaryIO) -> None:
     ev = Envelope(envelope)
     store = KeyStore.from_text(keystore.read())
 
