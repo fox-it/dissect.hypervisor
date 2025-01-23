@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+from typing import BinaryIO
 from uuid import UUID
 
 import pytest
@@ -5,7 +8,7 @@ import pytest
 from dissect.hypervisor.disk.vhdx import VHDX, _iter_partial_runs, c_vhdx
 
 
-def test_vhdx_fixed(fixed_vhdx):
+def test_vhdx_fixed(fixed_vhdx: BinaryIO) -> None:
     v = VHDX(fixed_vhdx)
 
     assert v.size == 0xA00000
@@ -35,14 +38,14 @@ def test_vhdx_fixed(fixed_vhdx):
     )
 
     v.seek(0x200000)
-    assert v.read(512) == b"\xFF" * 512
+    assert v.read(512) == b"\xff" * 512
 
     for block in range(v.bat._pb_count):
         block_entry = v.bat.pb(block)
         assert block_entry.state == c_vhdx.PAYLOAD_BLOCK_FULLY_PRESENT
 
 
-def test_vhdx_dynamic(dynamic_vhdx):
+def test_vhdx_dynamic(dynamic_vhdx: BinaryIO) -> None:
     v = VHDX(dynamic_vhdx)
 
     assert v.size == 0xA00000
@@ -72,30 +75,30 @@ def test_vhdx_dynamic(dynamic_vhdx):
     )
 
     v.seek(0x200000)
-    assert v.read(512) == b"\xFF" * 512
+    assert v.read(512) == b"\xff" * 512
 
 
-def test_vhdx_differencing(differencing_vhdx):
-    with pytest.raises(IOError):
+def test_vhdx_differencing(differencing_vhdx: BinaryIO) -> None:
+    with pytest.raises(IOError, match="Failed to open parent disk with locator"):
         VHDX(differencing_vhdx)
 
 
 @pytest.mark.parametrize(
-    "test_input,expected",
+    ("test_input", "expected"),
     [
-        ((b"\xFF", 0, 8), [(1, 8)]),
-        ((b"\xFF", 4, 4), [(1, 4)]),
+        ((b"\xff", 0, 8), [(1, 8)]),
+        ((b"\xff", 4, 4), [(1, 4)]),
         ((b"\x00", 0, 8), [(0, 8)]),
         ((b"\x00", 4, 4), [(0, 4)]),
-        ((b"\xFF\x00", 0, 8), [(1, 8)]),
-        ((b"\xFF\x00", 4, 8), [(1, 4), (0, 4)]),
+        ((b"\xff\x00", 0, 8), [(1, 8)]),
+        ((b"\xff\x00", 4, 8), [(1, 4), (0, 4)]),
         ((b"\x00\x00", 0, 12), [(0, 12)]),
-        ((b"\x00\xFF", 4, 8), [(0, 4), (1, 4)]),
-        ((b"\xF0\xF0", 0, 16), [(0, 4), (1, 4), (0, 4), (1, 4)]),
-        ((b"\x0F\x0F", 0, 16), [(1, 4), (0, 4), (1, 4), (0, 4)]),
+        ((b"\x00\xff", 4, 8), [(0, 4), (1, 4)]),
+        ((b"\xf0\xf0", 0, 16), [(0, 4), (1, 4), (0, 4), (1, 4)]),
+        ((b"\x0f\x0f", 0, 16), [(1, 4), (0, 4), (1, 4), (0, 4)]),
         ((b"\x00", 0, 6), [(0, 6)]),
         ((b"\x00", 1, 6), [(0, 6)]),
     ],
 )
-def test_vhdx_partial_runs(test_input, expected):
+def test_vhdx_partial_runs(test_input: tuple[bytes, int, int], expected: list[tuple[int, int]]) -> None:
     assert list(_iter_partial_runs(*test_input)) == expected

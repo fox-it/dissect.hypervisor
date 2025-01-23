@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dissect.cstruct import cstruct
 
 # https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Storage/VDICore.h

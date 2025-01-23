@@ -1,9 +1,11 @@
+from __future__ import annotations
+
 from io import StringIO
 
 from dissect.hypervisor.descriptor.pvs import PVS
 
 
-def test_pvs():
+def test_pvs() -> None:
     xml = """
     <?xml version="1.0" encoding="UTF-8"?>
     <ParallelsVirtualMachine dyn_lists="VirtualAppliance 0" schemaVersion="1.0">

@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import array
+from typing import BinaryIO
 
 from dissect.util.stream import AlignedStream
 
@@ -7,7 +10,7 @@ from dissect.hypervisor.exceptions import Error
 
 
 class VDI(AlignedStream):
-    def __init__(self, fh, parent=None):
+    def __init__(self, fh: BinaryIO, parent: VDI | None = None):
         self.fh = fh
         self.parent = parent
         self.header = c_vdi.HeaderDescriptor(fh)
@@ -32,7 +35,7 @@ class VDI(AlignedStream):
         self.sector_size = self.header.SectorSize
         super().__init__(size=self.header.DiskSize)
 
-    def _read(self, offset, length):
+    def _read(self, offset: int, length: int) -> bytes:
         block_idx, block_offset = divmod(offset, self.block_size)
 
         bytes_read = []

@@ -1,7 +1,11 @@
+from __future__ import annotations
+
+from typing import BinaryIO
+
 from dissect.hypervisor.descriptor.hyperv import HyperVFile
 
 
-def test_hyperv_vmcx(vmcx):
+def test_hyperv_vmcx(vmcx: BinaryIO) -> None:
     hf = HyperVFile(vmcx)
 
     assert hf.header is hf.headers[0]
@@ -18,7 +22,7 @@ def test_hyperv_vmcx(vmcx):
     assert len(obj["configuration"]["settings"].keys()) == 6
 
 
-def test_hyperv_vmrs(vmrs):
+def test_hyperv_vmrs(vmrs: BinaryIO) -> None:
     hf = HyperVFile(vmrs)
 
     assert hf.header is hf.headers[0]

@@ -3,11 +3,12 @@
 # - /usr/lib/vmware/tpm/bin/keypersist
 # - /lib/libvmlibs.so
 
+from __future__ import annotations
+
 import hashlib
 import io
 from base64 import b64decode
-from collections import namedtuple
-from typing import BinaryIO, Dict
+from typing import BinaryIO, NamedTuple
 from urllib.parse import unquote
 from uuid import UUID
 
@@ -97,7 +98,10 @@ ENVELOPE_ATTRIBUTE_TYPE_MAP = {
 DECRYPT_CHUNK_SIZE = 1024 * 1024 * 4
 
 
-EnvelopeAttribute = namedtuple("EnvelopeAttribute", ("type", "flag", "value"))
+class EnvelopeAttribute(NamedTuple):
+    type: int
+    flag: int
+    value: bytes
 
 
 class Envelope:
@@ -142,7 +146,7 @@ class Envelope:
         self.size = size - (2 * ENVELOPE_BLOCK_SIZE)
         self.data = RangeStream(self.fh, ENVELOPE_BLOCK_SIZE, self.size)
 
-    def decrypt(self, key: bytes, aad: bytes = None) -> bytes:
+    def decrypt(self, key: bytes, aad: bytes | None = None) -> bytes:
         """Decrypt the data in this envelope.
 
         Arguments:
@@ -200,7 +204,7 @@ class Envelope:
 class KeyStore:
     """Implements a file based keystore as used in ESXi."""
 
-    def __init__(self, store: Dict[str, str]):
+    def __init__(self, store: dict[str, str]):
         self.store = store
 
         self.mode = self.store.get("mode", None)
@@ -235,7 +239,7 @@ class KeyStore:
         return self._key
 
     @classmethod
-    def from_text(cls, text: str):
+    def from_text(cls, text: str) -> KeyStore:
         """Parse a key store from a string.
 
         Arguments:
@@ -268,7 +272,7 @@ class KeyStore:
         return cls(store)
 
 
-def _read_envelope_attributes(buf: BinaryIO) -> Dict[str, EnvelopeAttribute]:
+def _read_envelope_attributes(buf: BinaryIO) -> dict[str, EnvelopeAttribute]:
     attributes = {}
     while True:
         try:
@@ -320,7 +324,7 @@ def _pack_envelope_header(envelope: Envelope, block_size: int = ENVELOPE_BLOCK_S
     return stream.getvalue()
 
 
-def _pack_attributes(stream: BinaryIO, attributes: Dict[str, EnvelopeAttribute]):
+def _pack_attributes(stream: BinaryIO, attributes: dict[str, EnvelopeAttribute]) -> None:
     for name, attribute in attributes.items():
         c_envelope.AttributeType.write(stream, attribute.type)
         c_envelope.uint8.write(stream, attribute.flag)

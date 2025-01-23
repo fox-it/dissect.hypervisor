@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from io import StringIO
 
 from dissect.hypervisor.descriptor.vbox import VBox

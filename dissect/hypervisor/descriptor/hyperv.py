@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import struct
-from collections.abc import ItemsView, KeysView, ValuesView
-from typing import BinaryIO, Optional, Union
+from typing import TYPE_CHECKING, BinaryIO
 
 from dissect.util.stream import RangeStream
 
@@ -15,6 +14,9 @@ from dissect.hypervisor.descriptor.c_hyperv import (
     c_hyperv,
 )
 from dissect.hypervisor.exceptions import InvalidSignature
+
+if TYPE_CHECKING:
+    from collections.abc import ItemsView, KeysView, ValuesView
 
 
 class HyperVFile:
@@ -278,7 +280,7 @@ class HyperVStorageKeyTableEntry:
         return f"<HyperVStorageKeyTableEntry type={self.type} size={self.size}>"
 
     @property
-    def parent(self) -> Optional[HyperVStorageKeyTableEntry]:
+    def parent(self) -> HyperVStorageKeyTableEntry | None:
         """Return the entry parent, if there is any.
 
         Requires that all key tables are loaded.
@@ -333,8 +335,8 @@ class HyperVStorageKeyTableEntry:
             file_object = self.get_file_object()
             # This memoryview has no purpose, only do it so the return value type is consistent
             return memoryview(file_object.read(size))
-        else:
-            return self.raw[self.header.data_offset :]
+
+        return self.raw[self.header.data_offset :]
 
     @property
     def key(self) -> str:
@@ -343,7 +345,7 @@ class HyperVStorageKeyTableEntry:
         return self.raw.tobytes()[: self.header.data_offset - 1].decode("utf-8")
 
     @property
-    def value(self) -> Union[int, bytes, str]:
+    def value(self) -> int | bytes | str:
         """Return a Python native value for this entry."""
         data = self.data
 
@@ -368,6 +370,8 @@ class HyperVStorageKeyTableEntry:
 
         if self.type == KeyDataType.Bool:
             return struct.unpack("<I", data[:4])[0] != 0
+
+        raise TypeError(f"Unknown data type: {self.type}")
 
     @property
     def data_size(self) -> int:
@@ -427,10 +431,7 @@ class HyperVStorageKeyTableEntry:
 
         obj = {}
         for key, child in self.children.items():
-            if child.type == KeyDataType.Node:
-                value = child.as_dict()
-            else:
-                value = child.value
+            value = child.as_dict() if child.type == KeyDataType.Node else child.value
 
             obj[key] = value
 
@@ -466,13 +467,10 @@ class HyperVStorageFileObject:
         if n is not None and n < -1:
             raise ValueError("invalid number of bytes to read")
 
-        if n == -1:
-            read_length = self.size
-        else:
-            read_length = min(n, self.size)
+        read_length = self.size if n == -1 else min(n, self.size)
 
         self.file.fh.seek(self.offset)
         return self.file.fh.read(read_length)
 
-    def open(self, size: Optional[int] = None) -> BinaryIO:
+    def open(self, size: int | None = None) -> BinaryIO:
         return RangeStream(self.file.fh, self.offset, size or self.size)

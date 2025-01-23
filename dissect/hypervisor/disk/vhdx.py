@@ -1,10 +1,13 @@
 # References:
 # - [MS-VHDX] https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-vhdx/83e061f8-f6e2-4de1-91bd-5d518a43d477
 
+from __future__ import annotations
+
 import logging
 import os
 from functools import lru_cache
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, BinaryIO, Callable, Final
 from uuid import UUID
 
 from dissect.util.stream import AlignedStream
@@ -25,6 +28,9 @@ from dissect.hypervisor.disk.c_vhdx import (
 )
 from dissect.hypervisor.exceptions import InvalidSignature, InvalidVirtualDisk
 
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
 log = logging.getLogger(__name__)
 log.setLevel(os.getenv("DISSECT_LOG_VHDX", "CRITICAL"))
 
@@ -38,7 +44,7 @@ class VHDX(AlignedStream):
     the parent VHDX in the same directory, or the registered absolute directory.
     """
 
-    def __init__(self, fh):
+    def __init__(self, fh: BinaryIO | Path | str):
         if hasattr(fh, "read"):
             name = getattr(fh, "name", None)
             path = Path(name) if name else None
@@ -85,7 +91,7 @@ class VHDX(AlignedStream):
         self._chunk_ratio = ((2**23) * self.sector_size) // self.block_size
 
         self.parent = None
-        self.parent_locator = None
+        self.parent_locator: ParentLocator = None
         if self.has_parent:
             self.parent_locator = self.metadata.get(PARENT_LOCATOR_GUID)
             if self.parent_locator.type != VHDX_PARENT_LOCATOR_GUID:
@@ -97,7 +103,7 @@ class VHDX(AlignedStream):
 
         super().__init__(self.size)
 
-    def read_sectors(self, sector, count):
+    def read_sectors(self, sector: int, count: int) -> bytes:
         log.debug("VHDX::read_sectors(0x%x, 0x%x)", sector, count)
         sectors_read = []
 
@@ -165,7 +171,7 @@ class VHDX(AlignedStream):
 
         return b"".join(sectors_read)
 
-    def _read(self, offset, length):
+    def _read(self, offset: int, length: int) -> bytes:
         sector = offset // self.sector_size
         count = (length + self.sector_size - 1) // self.sector_size
 
@@ -173,7 +179,7 @@ class VHDX(AlignedStream):
 
 
 class RegionTable:
-    def __init__(self, fh, offset):
+    def __init__(self, fh: BinaryIO, offset: int):
         self.fh = fh
         self.offset = offset
 
@@ -185,7 +191,7 @@ class RegionTable:
         self.entries = c_vhdx.region_table_entry[self.header.entry_count](fh)
         self.lookup = {UUID(bytes_le=e.guid): e for e in self.entries}
 
-    def get(self, guid, required=True):
+    def get(self, guid: UUID, required: bool = True) -> c_vhdx.region_table_entry | None:
         data = self.lookup.get(guid)
         if not data and required:
             raise InvalidVirtualDisk(f"Missing required region: {guid}")
@@ -193,7 +199,7 @@ class RegionTable:
 
 
 class BlockAllocationTable:
-    def __init__(self, vhdx, offset):
+    def __init__(self, vhdx: VHDX, offset: int):
         self.vhdx = vhdx
         self.offset = offset
         self.chunk_ratio = vhdx._chunk_ratio
@@ -208,7 +214,7 @@ class BlockAllocationTable:
 
         self.get = lru_cache(4096)(self.get)
 
-    def get(self, entry):
+    def get(self, entry: int) -> c_vhdx.bat_entry:
         """Get a BAT entry."""
         if entry + 1 > self.entry_count:
             raise ValueError(f"Invalid entry for BAT lookup: {entry} (max entry is {self.entry_count - 1})")
@@ -216,13 +222,13 @@ class BlockAllocationTable:
         self.vhdx.fh.seek(self.offset + entry * 8)
         return c_vhdx.bat_entry(self.vhdx.fh)
 
-    def pb(self, block):
+    def pb(self, block: int) -> c_vhdx.bat_entry:
         """Get a payload block entry for a given block."""
         # Calculate how many interleaved sector bitmap entries there must be for this block
         sb_entries = block // self.chunk_ratio
         return self.get(block + sb_entries)
 
-    def sb(self, block):
+    def sb(self, block: int) -> c_vhdx.bat_entry:
         """Get a sector bitmap entry for a given block."""
         # Calculate how many interleaved sector bitmap entries there must be for this block
         num_sb = block // self.chunk_ratio
@@ -230,14 +236,14 @@ class BlockAllocationTable:
 
 
 class ParentLocator:
-    def __init__(self, fh):
+    def __init__(self, fh: BinaryIO):
         self.fh = fh
         self.offset = fh.tell()
         self.header = c_vhdx.parent_locator_header(fh)
         self.type = UUID(bytes_le=self.header.locator_type)
         self._entries = c_vhdx.parent_locator_entry[self.header.key_value_count](fh)
 
-        self.entries = {}
+        self.entries: dict[str, str] = {}
         for entry in self._entries:
             fh.seek(self.offset + entry.key_offset)
             key = fh.read(entry.key_length).decode("utf-16-le")
@@ -248,7 +254,7 @@ class ParentLocator:
 
 
 class MetadataTable:
-    METADATA_MAP = {
+    METADATA_MAP: Final[dict[UUID, Callable[[BinaryIO], Any]]] = {
         FILE_PARAMETERS_GUID: c_vhdx.file_parameters,
         VIRTUAL_DISK_SIZE_GUID: c_vhdx.virtual_disk_size,
         VIRTUAL_DISK_ID_GUID: c_vhdx.virtual_disk_id,
@@ -257,7 +263,7 @@ class MetadataTable:
         PARENT_LOCATOR_GUID: ParentLocator,
     }
 
-    def __init__(self, fh, offset, length):
+    def __init__(self, fh: BinaryIO, offset: int, length: int):
         self.fh = fh
         self.offset = offset
         self.length = length
@@ -277,14 +283,14 @@ class MetadataTable:
             value = self.METADATA_MAP[item_id](fh)
             self.lookup[item_id] = value
 
-    def get(self, guid, required=True):
+    def get(self, guid: UUID, required: bool = True) -> Any | None:
         data = self.lookup.get(guid)
         if not data and required:
             raise InvalidVirtualDisk(f"Missing required region: {guid}")
         return data
 
 
-def _iter_partial_runs(bitmap, start_idx, length):
+def _iter_partial_runs(bitmap: bytes, start_idx: int, length: int) -> Iterator[tuple[int, int]]:
     current_type = (bitmap[0] & (1 << start_idx)) >> start_idx
     current_count = 0
 
@@ -311,7 +317,7 @@ def _iter_partial_runs(bitmap, start_idx, length):
         yield (current_type, current_count)
 
 
-def open_parent(path, locator):
+def open_parent(path: Path, locator: dict[str, str]) -> VHDX:
     try:
         filepath = path.joinpath(locator["relative_path"].replace("\\", "/"))
         if not filepath.exists():

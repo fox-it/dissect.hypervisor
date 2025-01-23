@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 import sys
 from pathlib import Path
@@ -5,7 +7,7 @@ from pathlib import Path
 from dissect.hypervisor.util.envelope import Envelope, KeyStore
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(description="ESXi envelope file decrypter")
     parser.add_argument("envelope", type=Path, help="envelope file")
     parser.add_argument("-ks", "--keystore", type=Path, required=True, help="keystore file")
@@ -21,6 +23,8 @@ def main():
 
         with args.output.open("wb") as fhout:
             fhout.write(envelope.decrypt(keystore.key))
+
+    return 0
 
 
 if __name__ == "__main__":

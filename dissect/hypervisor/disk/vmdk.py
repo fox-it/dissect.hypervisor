@@ -11,6 +11,7 @@ from bisect import bisect_right
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+from typing import Any, BinaryIO
 
 from dissect.util.stream import AlignedStream
 
@@ -27,14 +28,11 @@ log.setLevel(os.getenv("DISSECT_LOG_VMDK", "CRITICAL"))
 
 
 class VMDK(AlignedStream):
-    def __init__(self, fh):
+    def __init__(self, fh: BinaryIO | Path | str | list[BinaryIO | Path | str]):
         """
         Input can be a file handle to a Disk Descriptor file or a list of file handles to multiple VMDK files.
         """
-        if not isinstance(fh, list):
-            fhs = [fh]
-        else:
-            fhs = fh
+        fhs = [fh] if not isinstance(fh, list) else fh
 
         self.disks = []
         self.parent = None
@@ -92,7 +90,7 @@ class VMDK(AlignedStream):
 
         super().__init__(size)
 
-    def read_sectors(self, sector, count):
+    def read_sectors(self, sector: int, count: int) -> bytes:
         log.debug("VMDK::read_sectors(0x%x, 0x%x)", sector, count)
 
         sectors_read = []
@@ -113,7 +111,7 @@ class VMDK(AlignedStream):
 
         return b"".join(sectors_read)
 
-    def _read(self, offset, length):
+    def _read(self, offset: int, length: int) -> bytes:
         log.debug("VMDK::_read(0x%x, 0x%x)", offset, length)
 
         sector = offset // SECTOR_SIZE
@@ -123,7 +121,7 @@ class VMDK(AlignedStream):
 
 
 class RawDisk:
-    def __init__(self, fh, size=None, offset=0, sector_offset=0):
+    def __init__(self, fh: BinaryIO, size: int | None = None, offset: int = 0, sector_offset: int = 0):
         self.fh = fh
         self.offset = offset
         self.sector_offset = sector_offset
@@ -141,7 +139,7 @@ class RawDisk:
         self.seek = fh.seek
         self.tell = fh.tell
 
-    def read_sectors(self, sector, count):
+    def read_sectors(self, sector: int, count: int) -> bytes:
         log.debug("RawDisk::read_sectors(0x%x)", sector)
 
         self.fh.seek((sector - self.sector_offset) * SECTOR_SIZE)
@@ -149,7 +147,9 @@ class RawDisk:
 
 
 class SparseDisk:
-    def __init__(self, fh, parent=None, offset=0, sector_offset=0):
+    def __init__(
+        self, fh: BinaryIO, parent: VMDK | RawDisk | SparseDisk | None = None, offset: int = 0, sector_offset: int = 0
+    ):
         self.fh = fh
         self.parent = parent
         self.offset = offset
@@ -205,7 +205,7 @@ class SparseDisk:
 
         self._lookup_grain_table = lru_cache(128)(self._lookup_grain_table)
 
-    def _lookup_grain_table(self, directory):
+    def _lookup_grain_table(self, directory: int) -> list[int]:
         gtbl_offset = self._grain_directory[directory]
 
         if self.is_sesparse:
@@ -233,7 +233,7 @@ class SparseDisk:
 
         return table
 
-    def _lookup_grain(self, grain):
+    def _lookup_grain(self, grain: int) -> int:
         gdir_entry, gtbl_entry = divmod(grain, self._grain_table_size)
         table = self._lookup_grain_table(gdir_entry)
 
@@ -247,21 +247,23 @@ class SparseDisk:
                 if grain_type in (c_vmdk.SESPARSE_GRAIN_TYPE_UNALLOCATED, c_vmdk.SESPARSE_GRAIN_TYPE_FALLTHROUGH):
                     # Unallocated or scsi unmapped, fallthrough
                     return 0
-                elif grain_type == c_vmdk.SESPARSE_GRAIN_TYPE_ZERO:
+                if grain_type == c_vmdk.SESPARSE_GRAIN_TYPE_ZERO:
                     # Sparse, zero grain
                     return 1
-                elif grain_type == c_vmdk.SESPARSE_GRAIN_TYPE_ALLOCATED:
+                if grain_type == c_vmdk.SESPARSE_GRAIN_TYPE_ALLOCATED:
                     # Allocated
                     cluster_sector_hi = (grain_entry & 0x0FFF000000000000) >> 48
                     cluster_sector_lo = (grain_entry & 0x0000FFFFFFFFFFFF) << 12
                     cluster_sector = cluster_sector_hi | cluster_sector_lo
                     return self.header.grains_offset + cluster_sector * self.header.grain_size
-            else:
-                return grain_entry
-        else:
-            return 0
 
-    def get_runs(self, sector, count):
+                raise ValueError("Unknown grain type")
+
+            return grain_entry
+
+        return 0
+
+    def get_runs(self, sector: int, count: int) -> list[tuple[int, int, int, int | None]]:
         disk_sector = sector - self.sector_offset
 
         run_type = None
@@ -283,9 +285,7 @@ class SparseDisk:
             grain_sector = self._lookup_grain(grain)
             read_sector_count = min(read_count, self.header.grain_size - grain_offset)
 
-            if run_type == 0 and grain_sector == 0:
-                run_count += read_sector_count
-            elif run_type == 1 and grain_sector == 1:
+            if (run_type == 0 and grain_sector == 0) or (run_type == 1 and grain_sector == 1):
                 run_count += read_sector_count
             elif run_type and run_type > 1 and grain_sector == next_grain_sector:
                 next_grain_sector += self.header.grain_size
@@ -317,7 +317,7 @@ class SparseDisk:
 
         return runs
 
-    def read_sectors(self, sector, count):
+    def read_sectors(self, sector: int, count: int) -> bytes:
         log.debug("SparseDisk::read_sectors(0x%x, 0x%x)", sector, count)
 
         runs = self.get_runs(sector, count)
@@ -363,7 +363,7 @@ class SparseDisk:
 
         return b"".join(sectors_read)
 
-    def _read_compressed_grain(self, sector):
+    def _read_compressed_grain(self, sector: int) -> bytes:
         self.fh.seek(sector * SECTOR_SIZE)
         buf = self.fh.read(SECTOR_SIZE)
 
@@ -385,7 +385,7 @@ class SparseDisk:
 
 
 class SparseExtentHeader:
-    def __init__(self, fh):
+    def __init__(self, fh: BinaryIO):
         magic = fh.read(4)
         fh.seek(-4, io.SEEK_CUR)
 
@@ -398,7 +398,7 @@ class SparseExtentHeader:
         else:
             raise NotImplementedError("Unsupported sparse extent")
 
-    def __getattr__(self, attr):
+    def __getattr__(self, attr: str) -> Any:
         return getattr(self.hdr, attr)
 
 
@@ -461,7 +461,7 @@ class DiskDescriptor:
 
         Resources:
             - https://github.com/libyal/libvmdk/blob/main/documentation/VMWare%20Virtual%20Disk%20Format%20(VMDK).asciidoc
-        """  # noqa: E501
+        """
 
         descriptor_settings = {}
         extents: list[ExtentDescriptor] = []
@@ -474,7 +474,7 @@ class DiskDescriptor:
             if not line or line.startswith("#"):
                 continue
 
-            if line.startswith("RW ") or line.startswith("RDONLY ") or line.startswith("NOACCESS "):
+            if line.startswith(("RW ", "RDONLY ", "NOACCESS ")):
                 match = RE_EXTENT_DESCRIPTOR.search(line)
 
                 if not match:
@@ -529,7 +529,7 @@ class DiskDescriptor:
         return str_template.format(descriptor_settings, extents, disk_db)
 
 
-def open_parent(path, filename_hint):
+def open_parent(path: Path, filename_hint: str) -> VMDK:
     try:
         filename_hint = filename_hint.replace("\\", "/")
         hint_path, _, filename = filename_hint.rpartition("/")
@@ -539,6 +539,6 @@ def open_parent(path, filename_hint):
             filepath = path.parent.joinpath(hint_path_name).joinpath(filename)
         vmdk = VMDK(filepath)
     except Exception as err:
-        raise IOError("Failed to open parent disk with hint {} from path {}: {}".format(filename_hint, path, err))
+        raise IOError(f"Failed to open parent disk with hint {filename_hint} from path {path}: {err}")
 
     return vmdk

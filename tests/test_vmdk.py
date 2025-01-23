@@ -1,10 +1,14 @@
+from __future__ import annotations
+
+from typing import BinaryIO
+
 import pytest
 
 from dissect.hypervisor.disk.c_vmdk import c_vmdk
 from dissect.hypervisor.disk.vmdk import VMDK, DiskDescriptor, ExtentDescriptor
 
 
-def test_vmdk_sesparse(sesparse_vmdk):
+def test_vmdk_sesparse(sesparse_vmdk: BinaryIO) -> None:
     vmdk = VMDK(sesparse_vmdk)
 
     disk = vmdk.disks[0]
@@ -23,7 +27,7 @@ def test_vmdk_sesparse(sesparse_vmdk):
 
 
 @pytest.mark.parametrize(
-    "extent_description, expected_extents",
+    ("extent_description", "expected_extents"),
     [
         (
             'RW 123456789 SPARSE "disk.vmdk"',
@@ -188,12 +192,12 @@ def test_vmdk_sesparse(sesparse_vmdk):
         "emoji-four-parts",
     ),
 )
-def test_vmdk_extent_description(extent_description: str, expected_extents: list) -> None:
+def test_vmdk_extent_description(extent_description: str, expected_extents: list[ExtentDescriptor]) -> None:
     """test if we correctly parse VMDK sparse and flat extent descriptions.
 
     Resources:
         - https://github.com/libyal/libvmdk/blob/main/documentation/VMWare%20Virtual%20Disk%20Format%20(VMDK).asciidoc#22-extent-descriptions
-    """  # noqa: E501
+    """
 
     descriptor = DiskDescriptor.parse(extent_description)
     assert descriptor.extents == expected_extents

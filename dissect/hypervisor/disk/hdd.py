@@ -4,15 +4,18 @@ from bisect import bisect_right
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
-from typing import BinaryIO, Iterator, Optional, Tuple, Union
+from typing import TYPE_CHECKING, BinaryIO
 from uuid import UUID
-from xml.etree.ElementTree import Element
 
 from defusedxml import ElementTree
 from dissect.util.stream import AlignedStream
 
 from dissect.hypervisor.disk.c_hdd import SECTOR_SIZE, c_hdd
 from dissect.hypervisor.exceptions import InvalidHeaderError
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from xml.etree.ElementTree import Element
 
 DEFAULT_TOP_GUID = UUID("{5fbaabe3-6958-40ff-92a7-860e329aab41}")
 NULL_GUID = UUID("00000000-0000-0000-0000-000000000000")
@@ -76,7 +79,7 @@ class HDD:
         # If the path is relative, it's always relative to the HDD root
         return (root / path).open("rb")
 
-    def open(self, guid: Optional[Union[str, UUID]] = None) -> BinaryIO:
+    def open(self, guid: str | UUID | None = None) -> BinaryIO:
         """Open a stream for this HDD, optionally for a specific snapshot.
 
         If no snapshot GUID is provided, the "top" snapshot will be used.
@@ -154,7 +157,7 @@ class XMLEntry:
 
     @classmethod
     def _from_xml(cls, element: Element) -> XMLEntry:
-        raise NotImplementedError()
+        raise NotImplementedError
 
 
 @dataclass
@@ -213,7 +216,7 @@ class Image(XMLEntry):
 
 @dataclass
 class Snapshots(XMLEntry):
-    top_guid: Optional[UUID]
+    top_guid: UUID | None
     shots: list[Shot]
 
     @classmethod
@@ -307,7 +310,7 @@ class HDS(AlignedStream):
         parent: Optional file-like object for the parent HDS file.
     """
 
-    def __init__(self, fh: BinaryIO, parent: Optional[BinaryIO] = None):
+    def __init__(self, fh: BinaryIO, parent: BinaryIO | None = None):
         self.fh = fh
         self.parent = parent
 
@@ -357,7 +360,7 @@ class HDS(AlignedStream):
 
         return b"".join(result)
 
-    def _iter_runs(self, offset: int, length: int) -> Iterator[Tuple[int, int]]:
+    def _iter_runs(self, offset: int, length: int) -> Iterator[tuple[int, int]]:
         """Iterate optimized read runs for a given offset and read length.
 
         Args:
@@ -374,12 +377,9 @@ class HDS(AlignedStream):
             read_size = min(self.cluster_size - offset_in_cluster, length)
 
             bat_entry = bat[cluster_idx]
-            if bat_entry == 0:
-                # BAT entry of 0 means either a sparse or a parent read
-                # Use 0 to denote a sparse run for now to make calculations easier
-                read_offset = 0
-            else:
-                read_offset = (bat_entry * self._bat_multiplier * SECTOR_SIZE) + offset_in_cluster
+            # BAT entry of 0 means either a sparse or a parent read
+            # Use 0 to denote a sparse run for now to make calculations easier
+            read_offset = 0 if bat_entry == 0 else bat_entry * self._bat_multiplier * SECTOR_SIZE + offset_in_cluster
 
             if run_offset is None:
                 # First iteration
