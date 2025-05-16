@@ -20,7 +20,6 @@ def test_vmtar(vgz: BinaryIO) -> None:
     # The test file has no textPgs/fixUpPgs
     assert all(member.is_visor for member in members.values())
     assert set(members.keys()) == {
-        "test",
         "test/file1",
         "test/file2",
         "test/file3",
