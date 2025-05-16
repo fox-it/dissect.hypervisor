@@ -1,3 +1,5 @@
+project = "dissect.hypervisor"
+
 extensions = [
     "autoapi.extension",
     "sphinx.ext.autodoc",

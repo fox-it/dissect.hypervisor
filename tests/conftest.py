@@ -26,74 +26,74 @@ def open_file_gz(name: str, mode: str = "rb") -> Iterator[BinaryIO]:
 
 @pytest.fixture
 def encrypted_vmx() -> Iterator[BinaryIO]:
-    yield from open_file("data/encrypted.vmx")
+    yield from open_file("_data/descriptor/vmx/encrypted.vmx")
 
 
 @pytest.fixture
 def vmcx() -> Iterator[BinaryIO]:
-    yield from open_file("data/test.vmcx")
+    yield from open_file("_data/descriptor/hyperv/test.vmcx")
 
 
 @pytest.fixture
 def vmrs() -> Iterator[BinaryIO]:
-    yield from open_file("data/test.VMRS")
+    yield from open_file("_data/descriptor/hyperv/test.VMRS")
 
 
 @pytest.fixture
 def fixed_vhd() -> Iterator[BinaryIO]:
-    yield from open_file_gz("data/fixed.vhd.gz")
+    yield from open_file_gz("_data/disk/vhd/fixed.vhd.gz")
 
 
 @pytest.fixture
 def dynamic_vhd() -> Iterator[BinaryIO]:
-    yield from open_file_gz("data/dynamic.vhd.gz")
+    yield from open_file_gz("_data/disk/vhd/dynamic.vhd.gz")
 
 
 @pytest.fixture
 def fixed_vhdx() -> Iterator[BinaryIO]:
-    yield from open_file_gz("data/fixed.vhdx.gz")
+    yield from open_file_gz("_data/disk/vhdx/fixed.vhdx.gz")
 
 
 @pytest.fixture
 def dynamic_vhdx() -> Iterator[BinaryIO]:
-    yield from open_file_gz("data/dynamic.vhdx.gz")
+    yield from open_file_gz("_data/disk/vhdx/dynamic.vhdx.gz")
 
 
 @pytest.fixture
 def differencing_vhdx() -> Iterator[BinaryIO]:
-    yield from open_file_gz("data/differencing.avhdx.gz")
+    yield from open_file_gz("_data/disk/vhdx/differencing.avhdx.gz")
 
 
 @pytest.fixture
 def sesparse_vmdk() -> Iterator[BinaryIO]:
-    yield from open_file_gz("data/sesparse.vmdk.gz")
+    yield from open_file_gz("_data/disk/vmdk/sesparse.vmdk.gz")
 
 
 @pytest.fixture
 def plain_hdd() -> Iterator[str]:
-    return absolute_path("data/plain.hdd")
+    return absolute_path("_data/disk/hdd/plain.hdd")
 
 
 @pytest.fixture
 def expanding_hdd() -> Iterator[str]:
-    return absolute_path("data/expanding.hdd")
+    return absolute_path("_data/disk/hdd/expanding.hdd")
 
 
 @pytest.fixture
 def split_hdd() -> Iterator[str]:
-    return absolute_path("data/split.hdd")
+    return absolute_path("_data/disk/hdd/split.hdd")
 
 
 @pytest.fixture
 def envelope() -> Iterator[BinaryIO]:
-    yield from open_file("data/local.tgz.ve")
+    yield from open_file("_data/util/envelope/local.tgz.ve")
 
 
 @pytest.fixture
 def keystore() -> Iterator[TextIO]:
-    yield from open_file("data/encryption.info", "r")
+    yield from open_file("_data/util/envelope/encryption.info", "r")
 
 
 @pytest.fixture
 def vgz() -> Iterator[BinaryIO]:
-    yield from open_file("data/test.vgz")
+    yield from open_file("_data/util/vmtar/test.vgz")

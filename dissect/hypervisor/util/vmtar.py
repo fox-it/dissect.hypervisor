@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import struct
 import tarfile
+from typing import BinaryIO
 
 
 class VisorTarInfo(tarfile.TarInfo):
@@ -49,9 +50,59 @@ class VisorTarInfo(tarfile.TarInfo):
         return super()._proc_member(tarfile)
 
 
-def VisorTarFile(*args, **kwargs) -> tarfile.TarFile:
-    return tarfile.TarFile(*args, **kwargs, tarinfo=VisorTarInfo)
+class VisorTarFile(tarfile.TarFile):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs, tarinfo=VisorTarInfo)
+
+    @classmethod
+    def visoropen(cls, name: str, mode: str = "r", fileobj: BinaryIO | None = None, **kwargs) -> VisorTarFile:
+        """Open a visor tar file for reading. Supports gzip and lzma compression."""
+        if mode not in ("r",):
+            raise tarfile.TarError("visor currently only supports read mode")
+
+        try:
+            from gzip import GzipFile
+        except ImportError:
+            raise tarfile.CompressionError("gzip module is not available") from None
+
+        try:
+            from lzma import LZMAError, LZMAFile
+        except ImportError:
+            raise tarfile.CompressionError("lzma module is not available") from None
+
+        try:
+            fileobj = GzipFile(name, mode + "b", fileobj=fileobj)
+        except OSError as e:
+            if fileobj is not None and mode == "r":
+                raise tarfile.ReadError("not a visor file") from e
+            raise
+
+        try:
+            t = cls.taropen(name, mode, fileobj, **kwargs)
+        except Exception:
+            # Ignore an error here, could still be LZMA compressed
+            pass
+
+        fileobj.seek(0)
+        fileobj = LZMAFile(fileobj or name, mode)  # noqa: SIM115
+
+        try:
+            t = cls.taropen(name, mode, fileobj, **kwargs)
+        except (LZMAError, EOFError, OSError) as e:
+            fileobj.close()
+            if mode == "r":
+                raise tarfile.ReadError("not a visor file") from e
+            raise
+        except:
+            fileobj.close()
+            raise
+
+        t._extfileobj = False
+        return t
+
+    OPEN_METH = tarfile.TarFile.OPEN_METH | {"visor": "visoropen"}
 
 
-def open(*args, **kwargs) -> tarfile.TarFile:
-    return tarfile.open(*args, **kwargs, tarinfo=VisorTarInfo)
+open = VisorTarFile.open
+
+is_tarfile = type(tarfile.is_tarfile)(tarfile.is_tarfile.__code__, tarfile.is_tarfile.__globals__ | {"open": open})
