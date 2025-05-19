@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import struct
 import tarfile
+from io import BytesIO
+from typing import BinaryIO, Final
 
 
 class VisorTarInfo(tarfile.TarInfo):
@@ -49,9 +51,72 @@ class VisorTarInfo(tarfile.TarInfo):
         return super()._proc_member(tarfile)
 
 
-def VisorTarFile(*args, **kwargs) -> tarfile.TarFile:
-    return tarfile.TarFile(*args, **kwargs, tarinfo=VisorTarInfo)
+class VisorTarFile(tarfile.TarFile):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs, tarinfo=VisorTarInfo)
+
+    @classmethod
+    def visoropen(cls, name: str, mode: str = "r", fileobj: BinaryIO | None = None, **kwargs) -> VisorTarFile:
+        """Open a visor tar file for reading. Supports gzip and lzma compression."""
+        if mode not in ("r",):
+            raise tarfile.TarError("visor currently only supports read mode")
+
+        try:
+            from gzip import GzipFile
+        except ImportError:
+            raise tarfile.CompressionError("gzip module is not available") from None
+
+        try:
+            from lzma import LZMAError, LZMAFile
+        except ImportError:
+            raise tarfile.CompressionError("lzma module is not available") from None
+
+        compressed = False
+
+        try:
+            t = cls.taropen(name, mode, fileobj, **kwargs)
+        except Exception:
+            try:
+                fileobj = GzipFile(name, mode + "b", fileobj=fileobj)
+            except OSError as e:
+                if fileobj is not None and mode == "r":
+                    raise tarfile.ReadError("not a visor file") from e
+                raise
+
+            try:
+                t = cls.taropen(name, mode, fileobj, **kwargs)
+            except Exception:
+                fileobj.seek(0)
+                fileobj = LZMAFile(fileobj or name, mode)  # noqa: SIM115
+
+                try:
+                    t = cls.taropen(name, mode, fileobj, **kwargs)
+                except (LZMAError, EOFError, OSError) as e:
+                    fileobj.close()
+                    if mode == "r":
+                        raise tarfile.ReadError("not a visor file") from e
+                    raise
+                except:
+                    fileobj.close()
+                    raise
+
+            compressed = True
+
+        # If we get here, we have a valid visor tar file
+        if fileobj is not None and compressed:
+            # Just read the entire file into memory, it's probably small
+            fileobj.seek(0)
+            fileobj = BytesIO(fileobj.read())
+
+        t = cls.taropen(name, mode, fileobj, **kwargs)
+
+        t._extfileobj = False
+        return t
+
+    # Only allow opening visor tar files
+    OPEN_METH: Final[dict[str, str]] = {"visor": "visoropen"}
 
 
-def open(*args, **kwargs) -> tarfile.TarFile:
-    return tarfile.open(*args, **kwargs, tarinfo=VisorTarInfo)
+open = VisorTarFile.open
+
+is_tarfile = type(tarfile.is_tarfile)(tarfile.is_tarfile.__code__, tarfile.is_tarfile.__globals__ | {"open": open})
