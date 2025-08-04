@@ -119,8 +119,7 @@ class QCow2(AlignedStream):
             if backing_file is None:
                 if not isinstance(fh, Path):
                     raise Error(f"backing-file required but not provided (auto_backing_file = {self.auto_backing_file})")
-                candidate_path = Path(f).parent / self.auto_backing_file
-                if not candidate_path.exists():
+                if not (candidate_path := fh.parent.joinpath(self.auto_backing_file)).exists():
                     raise Error(f"backing-file '{candidate_path}' not found (auto_backing_file = '{self.auto_backing_file}')")
                 backing_file = candidate_path.open("rb")
 
