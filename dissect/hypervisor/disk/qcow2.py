@@ -117,7 +117,7 @@ class QCow2(AlignedStream):
             self.image_backing_file = self.auto_backing_file.upper()
 
             if backing_file is None:
-                if hasattr(f, 'read'):
+                if not isinstance(fh, Path):
                     raise Error(f"backing-file required but not provided (auto_backing_file = {self.auto_backing_file})")
                 candidate_path = Path(f).parent / self.auto_backing_file
                 if not candidate_path.exists():
