@@ -51,7 +51,7 @@ class QCow2(AlignedStream):
     in all null bytes being read.
     """
 
-    def __init__(self, fh: BinaryIO | Path, data_file: BinaryIO  | None = None, backing_file: BinaryIO | int | None = None):
+    def __init__(self, fh: BinaryIO | Path, data_file: BinaryIO | None = None, backing_file: BinaryIO | int | None = None):
         self.fh = fh.open("rb") if isinstance(fh, Path) else fh
 
         self.header = c_qcow2.QCowHeader(fh)
