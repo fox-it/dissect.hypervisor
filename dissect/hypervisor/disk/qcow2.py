@@ -52,10 +52,7 @@ class QCow2(AlignedStream):
     """
 
     def __init__(self, fh: BinaryIO | Path, data_file: BinaryIO  | None = None, backing_file: BinaryIO | int | None = None):
-        f = fh
-        if not hasattr(fh, "read"):
-            fh = f.open("rb")
-        self.fh = fh
+        self.fh = fh.open("rb") if isinstance(fh, Path) else fh
 
         self.header = c_qcow2.QCowHeader(fh)
         if self.header.magic != QCOW2_MAGIC:
