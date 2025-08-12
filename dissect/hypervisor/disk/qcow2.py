@@ -7,6 +7,7 @@ import copy
 import zlib
 from functools import cached_property, lru_cache
 from io import BytesIO
+from pathlib import Path
 from typing import TYPE_CHECKING, BinaryIO
 
 from dissect.util.stream import AlignedStream
@@ -50,8 +51,10 @@ class QCow2(AlignedStream):
     in all null bytes being read.
     """
 
-    def __init__(self, fh: BinaryIO, data_file: BinaryIO | None = None, backing_file: BinaryIO | int | None = None):
-        self.fh = fh
+    def __init__(
+        self, fh: BinaryIO | Path, data_file: BinaryIO | None = None, backing_file: BinaryIO | int | None = None
+    ):
+        self.fh = fh.open("rb") if isinstance(fh, Path) else fh
 
         self.header = c_qcow2.QCowHeader(fh)
         if self.header.magic != QCOW2_MAGIC:
@@ -116,7 +119,15 @@ class QCow2(AlignedStream):
             self.image_backing_file = self.auto_backing_file.upper()
 
             if backing_file is None:
-                raise Error(f"backing-file required but not provided (auto_backing_file = {self.auto_backing_file})")
+                if not isinstance(fh, Path):
+                    raise Error(
+                        f"backing-file required but not provided (auto_backing_file = {self.auto_backing_file})"
+                    )
+                if not (candidate_path := fh.parent.joinpath(self.auto_backing_file)).exists():
+                    raise Error(
+                        f"backing-file '{candidate_path}' not found (auto_backing_file = '{self.auto_backing_file}')"
+                    )
+                backing_file = candidate_path.open("rb")
 
             if backing_file != ALLOW_NO_BACKING_FILE:
                 self.backing_file = backing_file
