@@ -17,8 +17,8 @@ def mock_open_gz(self: Path, *args, **kwargs) -> BinaryIO:
     return gzip.open(self.with_suffix(self.suffix + ".gz"))
 
 
-def test_plain_hdd(plain_hdd: str) -> None:
-    hdd = HDD(Path(plain_hdd))
+def test_plain_hdd(plain_hdd: Path) -> None:
+    hdd = HDD(plain_hdd)
     storages = hdd.descriptor.storage_data.storages
 
     assert len(storages) == 1
@@ -31,11 +31,11 @@ def test_plain_hdd(plain_hdd: str) -> None:
         stream = hdd.open()
 
         for i in range(100):
-            assert stream.read(1024 * 1024).strip(bytes([i])) == b""
+            assert stream.read(1024 * 1024).strip(bytes([i])) == b"", f"Mismatch at offset {i * 1024 * 1024:#x}"
 
 
-def test_expanding_hdd(expanding_hdd: str) -> None:
-    hdd = HDD(Path(expanding_hdd))
+def test_expanding_hdd(expanding_hdd: Path) -> None:
+    hdd = HDD(expanding_hdd)
     storages = hdd.descriptor.storage_data.storages
 
     assert len(storages) == 1
@@ -48,11 +48,11 @@ def test_expanding_hdd(expanding_hdd: str) -> None:
         stream = hdd.open()
 
         for i in range(100):
-            assert stream.read(1024 * 1024).strip(bytes([i])) == b""
+            assert stream.read(1024 * 1024).strip(bytes([i])) == b"", f"Mismatch at offset {i * 1024 * 1024:#x}"
 
 
-def test_split_hdd(split_hdd: str) -> None:
-    hdd = HDD(Path(split_hdd))
+def test_split_hdd(split_hdd: Path) -> None:
+    hdd = HDD(split_hdd)
     storages = hdd.descriptor.storage_data.storages
 
     assert len(storages) == 6
@@ -86,8 +86,8 @@ def test_split_hdd(split_hdd: str) -> None:
                 assert buf == bytes([i + 1] * 512)
 
 
-def test_file_use_parent(plain_hdd: str) -> None:
-    hdd = HDD(Path(plain_hdd).joinpath("plain.hdd"))
+def test_file_use_parent(plain_hdd: Path) -> None:
+    hdd = HDD(plain_hdd.joinpath("plain.hdd"))
     storages = hdd.descriptor.storage_data.storages
 
     assert len(storages) == 1

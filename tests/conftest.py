@@ -70,18 +70,42 @@ def sesparse_vmdk() -> Iterator[BinaryIO]:
 
 
 @pytest.fixture
-def plain_hdd() -> Iterator[str]:
+def plain_hdd() -> Path:
     return absolute_path("_data/disk/hdd/plain.hdd")
 
 
 @pytest.fixture
-def expanding_hdd() -> Iterator[str]:
+def expanding_hdd() -> Path:
     return absolute_path("_data/disk/hdd/expanding.hdd")
 
 
 @pytest.fixture
-def split_hdd() -> Iterator[str]:
+def split_hdd() -> Path:
     return absolute_path("_data/disk/hdd/split.hdd")
+
+
+@pytest.fixture
+def basic_qcow2() -> Iterator[BinaryIO]:
+    yield from open_file_gz("_data/disk/qcow2/basic.qcow2.gz")
+
+
+@pytest.fixture
+def data_file_qcow2() -> Path:
+    return absolute_path("_data/disk/qcow2/data-file.qcow2.gz")
+
+
+@pytest.fixture
+def backing_chain_qcow2() -> tuple[Path, Path, Path]:
+    return (
+        absolute_path("_data/disk/qcow2/backing-chain-1.qcow2.gz"),
+        absolute_path("_data/disk/qcow2/backing-chain-2.qcow2.gz"),
+        absolute_path("_data/disk/qcow2/backing-chain-3.qcow2.gz"),
+    )
+
+
+@pytest.fixture
+def snapshot_qcow2() -> Iterator[BinaryIO]:
+    yield from open_file_gz("_data/disk/qcow2/snapshot.qcow2.gz")
 
 
 @pytest.fixture
