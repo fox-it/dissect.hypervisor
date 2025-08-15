@@ -61,7 +61,13 @@ class QCow2:
         allow_no_data_file: bool = False,
         allow_no_backing_file: bool = False,
     ):
-        self.fh = fh.open("rb") if isinstance(fh, Path) else fh
+        if isinstance(fh, Path):
+            self.path = fh
+            self.fh = self.path.open("rb")
+        else:
+            self.path = None
+            self.fh = fh
+
         self.fh.seek(0)
 
         self.header = c_qcow2.QCowHeader(self.fh)
@@ -114,19 +120,7 @@ class QCow2:
         self._read_extensions()
 
         if self.needs_data_file:
-            data_file_path = None
-            if data_file is None:
-                if isinstance(fh, Path):
-                    if (data_file_path := fh.with_name(self.image_data_file)).exists():
-                        data_file = data_file_path.open("rb")
-                    elif not allow_no_data_file:
-                        raise Error(
-                            f"data-file {str(data_file_path)!r} not found (image_data_file = {self.image_data_file!r})"
-                        )
-                elif not allow_no_data_file:
-                    raise Error(f"data-file required but not provided (image_data_file = {self.image_data_file!r})")
-
-            self.data_file = data_file
+            self.data_file = self._open_data_file(data_file, allow_no_data_file)
         else:
             self.data_file = self.fh
 
@@ -138,31 +132,7 @@ class QCow2:
             self.auto_backing_file = self.fh.read(self.header.backing_file_size).decode()
             self.image_backing_file = self.auto_backing_file.upper()
 
-            backing_file_path = None
-            if backing_file is None:
-                if isinstance(fh, Path):
-                    if (backing_file_path := fh.with_name(self.auto_backing_file)).exists():
-                        backing_file = backing_file_path.open("rb")
-                    elif not allow_no_backing_file:
-                        raise Error(
-                            f"backing-file {str(backing_file_path)!r} not found (auto_backing_file = {self.auto_backing_file!r})"  # noqa: E501
-                        )
-                elif not allow_no_backing_file:
-                    raise Error(
-                        f"backing-file required but not provided (auto_backing_file = {self.auto_backing_file!r})"
-                    )
-
-            if backing_file:
-                if backing_file.read(4) == QCOW2_MAGIC_BYTES:
-                    if backing_file_path:
-                        backing_file.close()
-                        backing_file = QCow2(backing_file_path).open()
-                    else:
-                        backing_file = QCow2(backing_file).open()
-                else:
-                    backing_file.seek(0)
-
-            self.backing_file = backing_file
+            self.backing_file = self._open_backing_file(backing_file, allow_no_backing_file)
 
         self.l2_table = lru_cache(128)(self.l2_table)
 
@@ -198,6 +168,46 @@ class QCow2:
 
             # Align to nearest 8 byte boundary
             offset += (ext.len + 7) & 0xFFFFFFF8
+
+    def _open_data_file(self, data_file: BinaryIO | None, allow_no_data_file: bool = False) -> BinaryIO | None:
+        if data_file is not None:
+            return data_file
+
+        if self.path:
+            if (data_file_path := self.path.with_name(self.image_data_file)).exists():
+                return data_file_path.open("rb")
+
+            if not allow_no_data_file:
+                raise Error(f"data-file {str(data_file_path)!r} not found (image_data_file = {self.image_data_file!r})")
+        elif allow_no_data_file:
+            return None
+
+        raise Error(f"data-file required but not provided (image_data_file = {self.image_data_file!r})")
+
+    def _open_backing_file(self, backing_file: BinaryIO | None, allow_no_backing_file: bool = False) -> BinaryIO | None:
+        backing_file_path = None
+        if backing_file is None:
+            if self.path:
+                if (backing_file_path := self.path.with_name(self.auto_backing_file)).exists():
+                    backing_file = backing_file_path.open("rb")
+                elif not allow_no_backing_file:
+                    raise Error(
+                        f"backing-file {str(backing_file_path)!r} not found (auto_backing_file = {self.auto_backing_file!r})"  # noqa: E501
+                    )
+            elif not allow_no_backing_file:
+                raise Error(f"backing-file required but not provided (auto_backing_file = {self.auto_backing_file!r})")
+
+        if backing_file:
+            if backing_file.read(4) == QCOW2_MAGIC_BYTES:
+                if backing_file_path:
+                    backing_file.close()
+                    backing_file = QCow2(backing_file_path).open()
+                else:
+                    backing_file = QCow2(backing_file).open()
+            else:
+                backing_file.seek(0)
+
+        return backing_file
 
     @cached_property
     def snapshots(self) -> list[QCow2Snapshot]:
