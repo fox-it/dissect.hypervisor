@@ -66,24 +66,22 @@ def test_backing_file(backing_chain_qcow2: tuple[Path, Path, Path]) -> None:
     file1, file2, file3 = backing_chain_qcow2
 
     # Test with file handle
-    with gzip.open(file1, "rb") as fh1:
+    with gzip.open(file1, "rb") as fh1, gzip.open(file2, "rb") as fh2, gzip.open(file3, "rb") as fh3:
         with pytest.raises(
             Error, match="backing-file required but not provided \\(auto_backing_file = 'backing-chain-2.qcow2'\\)"
         ):
             QCow2(fh1)
 
-        with gzip.open(file2, "rb") as fh2:
-            with pytest.raises(
-                Error, match="backing-file required but not provided \\(auto_backing_file = 'backing-chain-3.qcow2'\\)"
-            ):
-                QCow2(fh1, backing_file=fh2)
+        with pytest.raises(
+            Error, match="backing-file required but not provided \\(auto_backing_file = 'backing-chain-3.qcow2'\\)"
+        ):
+            QCow2(fh1, backing_file=fh2)
 
-            with gzip.open(file3, "rb") as fh3:
-                backing2 = QCow2(fh2, backing_file=fh3)
-                assert isinstance(backing2.backing_file, QCow2Stream)
+        backing2 = QCow2(fh2, backing_file=fh3)
+        assert isinstance(backing2.backing_file, QCow2Stream)
 
-                qcow2 = QCow2(fh1, backing_file=backing2.open())
-                assert isinstance(qcow2.backing_file, QCow2Stream)
+        qcow2 = QCow2(fh1, backing_file=backing2.open())
+        assert isinstance(qcow2.backing_file, QCow2Stream)
 
         # Test with allow_no_backing_file
         qcow2 = QCow2(fh1, allow_no_backing_file=True)
