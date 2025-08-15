@@ -171,9 +171,6 @@ UNALLOCATED_SUBCLUSTER_TYPES = (
 )
 
 
-def ctz(value: int, size: int = 32) -> int:
+def ctz(value: int) -> int:
     """Count the number of zero bits in an integer of a given size."""
-    for i in range(size):
-        if value & (1 << i):
-            return i
-    return 0
+    return (value & -value).bit_length() - 1 if value else 0
