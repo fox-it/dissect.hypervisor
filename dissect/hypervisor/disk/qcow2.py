@@ -188,7 +188,13 @@ class QCow2:
         backing_file_path = None
         if backing_file is None:
             if self.path:
-                if (backing_file_path := self.path.with_name(self.auto_backing_file)).exists():
+                auto_backing_path = Path(self.auto_backing_file)
+                backing_file_path = (
+                    auto_backing_path
+                    if auto_backing_path.is_absolute()
+                    else self.path.with_name(auto_backing_path.name)
+                )
+                if backing_file_path.exists():
                     backing_file = backing_file_path.open("rb")
                 elif not allow_no_backing_file:
                     raise Error(
