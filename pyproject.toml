@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "dissect.hypervisor"
 description = "A Dissect module implementing parsers for various hypervisor disk, backup and configuration files"
 readme = "README.md"
-requires-python = "~=3.9"
+requires-python = ">=3.10"
 license.text = "Affero General Public License v3"
 authors = [
   {name = "Dissect Team", email = "dissect@fox-it.com"}
