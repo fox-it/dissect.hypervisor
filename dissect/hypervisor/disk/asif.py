@@ -60,6 +60,7 @@ class ASIF:
         # It's possible that some of this can be simplified or the names improved
         self._blocks_per_chunk = self.chunk_size // self.block_size
 
+        # This check doesn't really make sense, but keep it in for now
         reserved_size = 4 * self.chunk_size
         self._num_reserved_table_entries = (
             1 if reserved_size < self._blocks_per_chunk else reserved_size // self._blocks_per_chunk
