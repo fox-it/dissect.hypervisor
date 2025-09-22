@@ -56,10 +56,10 @@ class ASIF:
         self.size = self.header.sector_count * self.block_size
         self.max_size = self.header.max_sector_count * self.block_size
 
-        # This is taken from the assembly with some creative variable naming
+        # The following math is taken from the assembly with some creative variable naming
+        # It's possible that some of this can be simplified or the names improved
         self._blocks_per_chunk = self.chunk_size // self.block_size
 
-        # Uncertain about these variable names, but the math is correct
         reserved_size = 4 * self.chunk_size
         self._num_reserved_table_entries = (
             1 if reserved_size < self._blocks_per_chunk else reserved_size // self._blocks_per_chunk
