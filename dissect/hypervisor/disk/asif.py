@@ -107,8 +107,7 @@ class ASIF:
                     )
 
                 disk.seek(metadata_offset + self.metadata_header.header_size)
-                buf = disk.read(self.metadata_header.data_size).strip(b"\x00")
-                self.metadata = plistlib.load(io.BytesIO(buf))
+                self.metadata = plistlib.loads(disk.read(self.metadata_header.data_size).strip(b"\x00"))
 
     @property
     def internal_metadata(self) -> dict[str, Any]:
