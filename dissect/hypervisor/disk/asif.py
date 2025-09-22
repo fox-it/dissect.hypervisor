@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import io
 import plistlib
 from functools import cached_property, lru_cache
 from typing import Any, BinaryIO
