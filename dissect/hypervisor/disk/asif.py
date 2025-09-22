@@ -46,8 +46,8 @@ class ASIF:
         self.header = c_asif.asif_header(fh)
         if self.header.header_signature != c_asif.ASIF_HEADER_SIGNATURE:
             raise InvalidSignature(
-                "Not a valid ASIF image "
-                f"(expected {c_asif.ASIF_HEADER_SIGNATURE:#x}, got {self.header.header_signature:#x})"
+                f"Not a valid ASIF image (expected {c_asif.ASIF_HEADER_SIGNATURE:#x}, "
+                f"got {self.header.header_signature:#x})"
             )
 
         self.guid = UUID(bytes=self.header.guid)
@@ -72,9 +72,9 @@ class ASIF:
         self._num_reserved_directory_entries = (self._num_reserved_table_entries + self._num_table_entries) // (
             self._num_reserved_table_entries + 1
         )
-        self._usable_entry_count = self._num_table_entries - self._num_reserved_directory_entries
+        self._num_usable_entries = self._num_table_entries - self._num_reserved_directory_entries
         # This is the size in bytes of data covered by a single table
-        self._size_per_table = self._usable_entry_count * self.chunk_size
+        self._size_per_table = self._num_usable_entries * self.chunk_size
 
         max_size = self.block_size * self.header.max_sector_count
         self._num_directory_entries = (self._size_per_table + max_size - 1) // self._size_per_table
@@ -91,7 +91,7 @@ class ASIF:
         self.active_directory = self.directories[0]
 
         self.metadata_header = None
-        self.metadata: dict[str, Any] | None = None
+        self.metadata: dict[str, Any] = {}
         if self.header.metadata_chunk:
             # Open the file in reserved mode to read from the reserved area
             with self.open(reserved=True) as disk:
@@ -101,8 +101,8 @@ class ASIF:
 
                 if self.metadata_header.header_signature != c_asif.ASIF_META_HEADER_SIGNATURE:
                     raise InvalidSignature(
-                        "Invalid a ASIF metadata header"
-                        f"(expected {c_asif.ASIF_META_HEADER_SIGNATURE:#x}, got {self.metadata_header.header_signature:#x})"  # noqa: E501
+                        f"Invalid a ASIF metadata header (expected {c_asif.ASIF_META_HEADER_SIGNATURE:#x}, "
+                        f"got {self.metadata_header.header_signature:#x})"
                     )
 
                 disk.seek(metadata_offset + self.metadata_header.header_size)
@@ -110,28 +110,22 @@ class ASIF:
                 self.metadata = plistlib.load(io.BytesIO(buf))
 
     @property
-    def internal_metadata(self) -> dict[str, Any] | None:
+    def internal_metadata(self) -> dict[str, Any]:
         """Get internal metadata from the ASIF image.
 
         Returns:
             A dictionary containing the internal metadata.
         """
-        if not self.metadata:
-            return None
-
-        return self.metadata.get("internal metadata")
+        return self.metadata.get("internal metadata", {})
 
     @property
-    def user_metadata(self) -> dict[str, Any] | None:
+    def user_metadata(self) -> dict[str, Any]:
         """Get user metadata from the ASIF image.
 
         Returns:
             A dictionary containing the user metadata.
         """
-        if not self.metadata:
-            return None
-
-        return self.metadata.get("user metadata")
+        return self.metadata.get("user metadata", {})
 
     def open(self, reserved: bool = False) -> DataStream:
         """Open a stream to read the ASIF image data.
@@ -149,6 +143,7 @@ class Directory:
     """ASIF Directory.
 
     A directory has a version (``uint64``) followed by a list of table entries (``uint64[]``).
+    The version number is used to determine the active directory, with the highest version being the active one.
     Each table entry is a chunk number and points to a table in the ASIF image.
 
     Args:
@@ -249,16 +244,14 @@ class DataStream(AlignedStream):
                 + relative_block_index // self.asif._blocks_per_chunk * self.asif._num_reserved_table_entries
             ) // self.asif._num_reserved_table_entries
 
-            entry = table.entries[data_idx]
             # 0x8000000000000000 = content dirty bit
             # 0x4000000000000000 = entry dirty bit
             # 0x3F80000000000000 = reserved bits
-
-            value = entry & 0x7FFFFFFFFFFFFF
-            raw_offset = value * self.asif.chunk_size
+            chunk = table.entries[data_idx] & 0x7FFFFFFFFFFFFF
+            raw_offset = chunk * self.asif.chunk_size
 
             read_length = min(length, self.asif.chunk_size)
-            if value == 0:
+            if chunk == 0:
                 result.append(b"\x00" * read_length)
             else:
                 self.asif.fh.seek(raw_offset)
