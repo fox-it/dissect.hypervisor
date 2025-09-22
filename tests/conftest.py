@@ -109,6 +109,11 @@ def snapshot_qcow2() -> Iterator[BinaryIO]:
 
 
 @pytest.fixture
+def basic_asif() -> Iterator[BinaryIO]:
+    yield from open_file_gz("_data/disk/asif/basic.asif.gz")
+
+
+@pytest.fixture
 def envelope() -> Iterator[BinaryIO]:
     yield from open_file("_data/util/envelope/local.tgz.ve")
 
