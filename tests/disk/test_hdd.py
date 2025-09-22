@@ -61,7 +61,7 @@ def test_split_hdd(split_hdd: Path) -> None:
 
     start = 0
 
-    for storage, split_size in zip(storages, split_sizes):
+    for storage, split_size in zip(storages, split_sizes, strict=False):
         assert storage.start == start
         assert storage.end == start + split_size
         assert len(storage.images) == 1

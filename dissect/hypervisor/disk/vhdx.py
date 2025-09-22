@@ -7,7 +7,7 @@ import logging
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, BinaryIO, Callable, Final
+from typing import TYPE_CHECKING, Any, BinaryIO, Final
 from uuid import UUID
 
 from dissect.util.stream import AlignedStream
@@ -29,7 +29,7 @@ from dissect.hypervisor.disk.c_vhdx import (
 from dissect.hypervisor.exceptions import InvalidSignature, InvalidVirtualDisk
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
 
 log = logging.getLogger(__name__)
 log.setLevel(os.getenv("DISSECT_LOG_VHDX", "CRITICAL"))
