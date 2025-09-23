@@ -46,6 +46,26 @@ dev = [
     "dissect.util>=3.0.dev,<4.0.dev",
 ]
 
+[dependency-groups]
+test = [
+    "pytest",
+]
+lint = [
+    "ruff==0.13.1",
+    "vermin",
+]
+build = [
+    "build",
+]
+debug = [
+    "ipdb",
+]
+dev = [
+    {include-group = "test"},
+    {include-group = "lint"},
+    {include-group = "debug"},
+]
+
 [project.scripts]
 envelope-decrypt = "dissect.hypervisor.tools.envelope:main"
 vmtar = "dissect.hypervisor.tools.vmtar:main"
