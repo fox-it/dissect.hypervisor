@@ -31,7 +31,7 @@ def test_basic(basic_qcow2: BinaryIO) -> None:
 def test_data_file(data_file_qcow2: Path) -> None:
     # Test with file handle
     with gzip.open(data_file_qcow2, "rb") as fh:
-        with pytest.raises(Error, match="data-file required but not provided \\(image_data_file = 'data-file.bin'\\)"):
+        with pytest.raises(Error, match=r"data-file required but not provided \(image_data_file = 'data-file.bin'\)"):
             QCow2(fh)
 
         with gzip.open(data_file_qcow2.with_name("data-file.bin.gz"), "rb") as fh_bin:
@@ -47,7 +47,7 @@ def test_data_file(data_file_qcow2: Path) -> None:
         # Test with allow_no_data_file
         qcow2 = QCow2(fh, allow_no_data_file=True)
         assert qcow2.data_file is None
-        with pytest.raises(Error, match="data-file required but not provided \\(image_data_file = 'data-file.bin'\\)"):
+        with pytest.raises(Error, match=r"data-file required but not provided \(image_data_file = 'data-file.bin'\)"):
             qcow2.open()
 
     # Test with Path
@@ -68,12 +68,12 @@ def test_backing_file(backing_chain_qcow2: tuple[Path, Path, Path]) -> None:
     # Test with file handle
     with gzip.open(file1, "rb") as fh1, gzip.open(file2, "rb") as fh2, gzip.open(file3, "rb") as fh3:
         with pytest.raises(
-            Error, match="backing-file required but not provided \\(auto_backing_file = 'backing-chain-2.qcow2'\\)"
+            Error, match=r"backing-file required but not provided \(auto_backing_file = 'backing-chain-2.qcow2'\)"
         ):
             QCow2(fh1)
 
         with pytest.raises(
-            Error, match="backing-file required but not provided \\(auto_backing_file = 'backing-chain-3.qcow2'\\)"
+            Error, match=r"backing-file required but not provided \(auto_backing_file = 'backing-chain-3.qcow2'\)"
         ):
             QCow2(fh1, backing_file=fh2)
 
@@ -87,7 +87,7 @@ def test_backing_file(backing_chain_qcow2: tuple[Path, Path, Path]) -> None:
         qcow2 = QCow2(fh1, allow_no_backing_file=True)
         assert qcow2.backing_file is None
         with pytest.raises(
-            Error, match="backing-file required but not provided \\(auto_backing_file = 'backing-chain-2.qcow2'\\)"
+            Error, match=r"backing-file required but not provided \(auto_backing_file = 'backing-chain-2.qcow2'\)"
         ):
             qcow2.open()
 
