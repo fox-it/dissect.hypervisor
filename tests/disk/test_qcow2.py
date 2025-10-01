@@ -66,7 +66,7 @@ def test_data_file(data_file_qcow2: Path) -> None:
         qcow2.image_data_file = "/absolute/path/to/nothing.qcow2"
         with pytest.raises(
             Error,
-            match=r"data-file '/absolute/path/to/nothing.qcow2' not found \(image_data_file = '/absolute/path/to/nothing.qcow2'\)",  # noqa: E501
+            match=r"data-file '(?:[A-Z]:\\+)?[/\\]+absolute[/\\]+path[/\\]+to[/\\]+nothing\.qcow2' not found \(image_data_file = '/absolute/path/to/nothing\.qcow2'\)",  # noqa: E501
         ):
             qcow2._open_data_file(None)
 
@@ -137,7 +137,7 @@ def test_backing_file(backing_chain_qcow2: tuple[Path, Path, Path]) -> None:
         qcow2.auto_backing_file = "/absolute/path/to/nothing.qcow2"
         with pytest.raises(
             Error,
-            match=r"backing-file '/absolute/path/to/nothing.qcow2' not found \(auto_backing_file = '/absolute/path/to/nothing.qcow2'\)",  # noqa: E501
+            match=r"backing-file '(?:[A-Z]:\\+)?[/\\]+absolute[/\\]+path[/\\]+to[/\\]+nothing\.qcow2' not found \(auto_backing_file = '/absolute/path/to/nothing\.qcow2'\)",  # noqa: E501
         ):
             qcow2._open_backing_file(None)
 
