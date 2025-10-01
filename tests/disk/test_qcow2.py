@@ -61,6 +61,15 @@ def test_data_file(data_file_qcow2: Path) -> None:
             for i in range(255):
                 assert stream.read(1024 * 1024).strip(bytes([i])) == b"", f"Mismatch at offset {i * 1024 * 1024:#x}"
 
+    # Test with absolute path
+    with patch.object(Path, "open", lambda *args: None), patch.object(Path, "exists", return_value=False):
+        qcow2.image_data_file = "/absolute/path/to/nothing.qcow2"
+        with pytest.raises(
+            Error,
+            match=r"data-file '/absolute/path/to/nothing.qcow2' not found \(image_data_file = '/absolute/path/to/nothing.qcow2'\)",  # noqa: E501
+        ):
+            qcow2._open_data_file(None)
+
 
 def test_backing_file(backing_chain_qcow2: tuple[Path, Path, Path]) -> None:
     file1, file2, file3 = backing_chain_qcow2
@@ -122,6 +131,15 @@ def test_backing_file(backing_chain_qcow2: tuple[Path, Path, Path]) -> None:
             assert stream.read(1024 * 1024).strip(b"\x00") == b"Something here three"
             assert stream.read(1024 * 1024).strip(b"\x00") == b"Something here four"
             assert stream.read(1024 * 1024).strip(b"\x00") == b"Something here five"
+
+    # Test with absolute path
+    with patch.object(Path, "open", lambda *args: None), patch.object(Path, "exists", return_value=False):
+        qcow2.auto_backing_file = "/absolute/path/to/nothing.qcow2"
+        with pytest.raises(
+            Error,
+            match=r"backing-file '/absolute/path/to/nothing.qcow2' not found \(auto_backing_file = '/absolute/path/to/nothing.qcow2'\)",  # noqa: E501
+        ):
+            qcow2._open_backing_file(None)
 
 
 def test_snapshot(snapshot_qcow2: BinaryIO) -> None:

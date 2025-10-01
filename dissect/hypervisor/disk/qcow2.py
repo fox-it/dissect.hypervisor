@@ -174,7 +174,7 @@ class QCow2:
             return data_file
 
         if self.path:
-            if (data_file_path := self.path.with_name(self.image_data_file)).exists():
+            if (data_file_path := self.path.parent.joinpath(self.image_data_file)).exists():
                 return data_file_path.open("rb")
 
             if not allow_no_data_file:
@@ -188,13 +188,7 @@ class QCow2:
         backing_file_path = None
         if backing_file is None:
             if self.path:
-                auto_backing_path = Path(self.auto_backing_file)
-                backing_file_path = (
-                    auto_backing_path
-                    if auto_backing_path.is_absolute()
-                    else self.path.with_name(auto_backing_path.name)
-                )
-                if backing_file_path.exists():
+                if (backing_file_path := self.path.parent.joinpath(self.auto_backing_file)).exists():
                     backing_file = backing_file_path.open("rb")
                 elif not allow_no_backing_file:
                     raise Error(
