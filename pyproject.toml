@@ -39,6 +39,7 @@ repository = "https://github.com/fox-it/dissect.hypervisor"
 [project.optional-dependencies]
 full = [
     "pycryptodome",
+    "zstandard",
 ]
 dev = [
     "dissect.hypervisor[full]",
