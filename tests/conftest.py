@@ -90,6 +90,11 @@ def basic_qcow2() -> Iterator[BinaryIO]:
 
 
 @pytest.fixture
+def basic_zstd_qcow2() -> Iterator[BinaryIO]:
+    yield from open_file_gz("_data/disk/qcow2/basic-zstd.qcow2.gz")
+
+
+@pytest.fixture
 def data_file_qcow2() -> Path:
     return absolute_path("_data/disk/qcow2/data-file.qcow2.gz")
 
