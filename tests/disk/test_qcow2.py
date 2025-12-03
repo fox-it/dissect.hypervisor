@@ -16,8 +16,9 @@ def mock_open_gz(self: Path, *args, **kwargs) -> BinaryIO:
     return gzip.open(self if self.suffix.lower() == ".gz" else self.with_suffix(self.suffix + ".gz"))
 
 
-def test_basic(basic_qcow2: BinaryIO) -> None:
-    qcow2 = QCow2(basic_qcow2)
+@pytest.mark.parametrize("name", ["basic_qcow2", "basic_zstd_qcow2"])
+def test_basic(name: str, request: pytest.FixtureRequest) -> None:
+    qcow2 = QCow2(request.getfixturevalue(name))
 
     assert qcow2.backing_file is None
     assert qcow2.data_file is qcow2.fh

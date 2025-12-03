@@ -3,9 +3,9 @@
 # - https://github.com/qemu/qemu/blob/master/docs/interop/qcow2.txt
 from __future__ import annotations
 
+import sys
 import zlib
 from functools import cached_property, lru_cache
-from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING, BinaryIO
 
@@ -28,8 +28,10 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
 try:
-    import zstandard as zstd
-
+    if sys.version_info >= (3, 14):
+        from compression import zstd  # novermin
+    else:
+        from backports import zstd
     HAS_ZSTD = True
 except ImportError:
     HAS_ZSTD = False
@@ -384,16 +386,8 @@ class QCow2Stream(AlignedStream):
             return dctx.decompress(buf, self.qcow2.cluster_size)
 
         if self.qcow2.compression_type == c_qcow2.QCOW2_COMPRESSION_TYPE_ZSTD:
-            result = []
-
             dctx = zstd.ZstdDecompressor()
-            reader = dctx.stream_reader(BytesIO(buf))
-            while reader.tell() < self.qcow2.cluster_size:
-                chunk = reader.read(self.qcow2.cluster_size - reader.tell())
-                if not chunk:
-                    break
-                result.append(chunk)
-            return b"".join(result)
+            return dctx.decompress(buf, self.qcow2.cluster_size)
 
         raise Error(f"Invalid compression type: {self.qcow2.compression_type}")
 
