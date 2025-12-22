@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-from typing import BinaryIO
 
 import pytest
 
@@ -11,10 +10,11 @@ from dissect.hypervisor.util.envelope import (
     Envelope,
     KeyStore,
 )
+from tests._util import absolute_path
 
 
-def test_envelope_keystore(keystore: BinaryIO) -> None:
-    store = KeyStore.from_text(keystore.read())
+def test_envelope_keystore() -> None:
+    store = KeyStore.from_text(absolute_path("_data/util/envelope/encryption.info").read_text())
 
     assert store.store[".encoding"] == "UTF-8"
     assert store.store["includeKeyCache"] == "FALSE"
@@ -31,8 +31,9 @@ def test_envelope_keystore(keystore: BinaryIO) -> None:
     assert store._key == bytes.fromhex("ae29634dca8627013f7c7cf2d05b4d5cc444d42cd4e8acbaa4fb815dda3b3066")
 
 
-def test_envelope(envelope: BinaryIO) -> None:
-    ev = Envelope(envelope)
+def test_envelope() -> None:
+    with absolute_path("_data/util/envelope/local.tgz.ve").open("rb") as fh:
+        ev = Envelope(fh)
 
     assert ev.key_info == "7e62cec5-6aef-4d7e-838b-cae32eefd251"
     assert ev.cipher_name == "AES-256-GCM"
@@ -43,10 +44,12 @@ def test_envelope(envelope: BinaryIO) -> None:
 
 
 @pytest.mark.skipif((not HAS_PYCRYPTODOME and not HAS_PYSTANDALONE), reason="No crypto module available")
-def test_envelope_decrypt(envelope: BinaryIO, keystore: BinaryIO) -> None:
-    ev = Envelope(envelope)
-    store = KeyStore.from_text(keystore.read())
+def test_envelope_decrypt() -> None:
+    with absolute_path("_data/util/envelope/local.tgz.ve").open("rb") as fh:
+        ev = Envelope(fh)
+        store = KeyStore.from_text(absolute_path("_data/util/envelope/encryption.info").read_text())
 
-    decrypted = ev.decrypt(store.key, aad=b"ESXConfiguration")
+        decrypted = ev.decrypt(store.key, aad=b"ESXConfiguration")
+
     assert len(decrypted) == 94293
     assert hashlib.sha256(decrypted).hexdigest() == "fe131620351b9fd5fc4aef219bf3211340f3742464c038e1695e7b6667f86952"

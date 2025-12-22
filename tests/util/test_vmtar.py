@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, BinaryIO
+from typing import TYPE_CHECKING
 
 from dissect.hypervisor.tools.vmtar import main as vmtar_main
 from dissect.hypervisor.util import vmtar
-from tests.conftest import absolute_path
+from tests._util import absolute_path
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -12,25 +12,26 @@ if TYPE_CHECKING:
     import pytest
 
 
-def test_vmtar(vgz: BinaryIO) -> None:
-    tar = vmtar.open(fileobj=vgz)
+def test_vmtar() -> None:
+    with absolute_path("_data/util/vmtar/test.vgz").open("rb") as fh:
+        tar = vmtar.open(fileobj=fh)
 
-    members = {member.name: member for member in tar.getmembers()}
+        members = {member.name: member for member in tar.getmembers()}
 
-    # The test file has no textPgs/fixUpPgs
-    assert all(member.is_visor for member in members.values())
-    assert set(members.keys()) == {
-        "test/file1",
-        "test/file2",
-        "test/file3",
-        "test/subdir",
-        "test/subdir/file4",
-    }
+        # The test file has no textPgs/fixUpPgs
+        assert all(member.is_visor for member in members.values())
+        assert set(members.keys()) == {
+            "test/file1",
+            "test/file2",
+            "test/file3",
+            "test/subdir",
+            "test/subdir/file4",
+        }
 
-    assert tar.extractfile(members["test/file1"]).read() == (b"a" * 512) + b"\n"
-    assert tar.extractfile(members["test/file2"]).read() == (b"b" * 1024) + b"\n"
-    assert tar.extractfile(members["test/file3"]).read() == (b"c" * 2048) + b"\n"
-    assert tar.extractfile(members["test/subdir/file4"]).read() == (b"f" * 2048) + b"\n"
+        assert tar.extractfile(members["test/file1"]).read() == (b"a" * 512) + b"\n"
+        assert tar.extractfile(members["test/file2"]).read() == (b"b" * 1024) + b"\n"
+        assert tar.extractfile(members["test/file3"]).read() == (b"c" * 2048) + b"\n"
+        assert tar.extractfile(members["test/subdir/file4"]).read() == (b"f" * 2048) + b"\n"
 
 
 def test_vmtar_tool(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture) -> None:

@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from typing import BinaryIO
-
 import pytest
 
 from dissect.hypervisor.descriptor.vmx import HAS_PYCRYPTODOME, HAS_PYSTANDALONE, VMX
+from tests._util import absolute_path
 
 
 def test_vmx() -> None:
@@ -66,8 +65,8 @@ sata0:0.FILENAME = "Virtual Disk 3.vmdk"
 
 
 @pytest.mark.skipif((not HAS_PYCRYPTODOME and not HAS_PYSTANDALONE), reason="No crypto module available")
-def test_vmx_encrypted(encrypted_vmx: BinaryIO) -> None:
-    vmx = VMX.parse(encrypted_vmx.read().decode())
+def test_vmx_encrypted() -> None:
+    vmx = VMX.parse(absolute_path("_data/descriptor/vmx/encrypted.vmx").read_text())
 
     assert vmx.encrypted
 
