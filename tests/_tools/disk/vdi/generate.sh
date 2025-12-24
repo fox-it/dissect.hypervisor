@@ -12,7 +12,7 @@ error()  { printf '[ERROR] %s\n' "$*" >&2; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
 require_tools() {
-    local -a tools=(qemu-img pigz dd)
+    local -a tools=(qemu-img pigz xxd dd)
     local missing=0
 
     for t in "${tools[@]}"; do
