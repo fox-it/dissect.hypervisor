@@ -1,546 +1,614 @@
 from __future__ import annotations
 
-import ctypes
 import io
 import logging
 import os
 import re
-import textwrap
 import zlib
 from bisect import bisect_right
-from dataclasses import dataclass
-from functools import lru_cache
+from functools import cached_property, lru_cache
 from pathlib import Path
-from typing import Any, BinaryIO
+from typing import TYPE_CHECKING, BinaryIO, NamedTuple
 
 from dissect.util.stream import AlignedStream
 
 from dissect.hypervisor.disk.c_vmdk import (
     COWD_MAGIC,
-    SECTOR_SIZE,
     SESPARSE_MAGIC,
-    VMDK_MAGIC,
+    SPARSE_MAGIC,
     c_vmdk,
 )
+
+if TYPE_CHECKING:
+    from types import TracebackType
+
+    from typing_extensions import Self
 
 log = logging.getLogger(__name__)
 log.setLevel(os.getenv("DISSECT_LOG_VMDK", "CRITICAL"))
 
 
-class VMDK(AlignedStream):
-    def __init__(self, fh: BinaryIO | Path | str | list[BinaryIO | Path | str]):
-        """
-        Input can be a file handle to a Disk Descriptor file or a list of file handles to multiple VMDK files.
-        """
-        fhs = [fh] if not isinstance(fh, list) else fh
-
-        self.disks = []
-        self.parent = None
-        self.descriptor = None
-        self._disk_offsets = []
-        self.sector_count = 0
-
-        for fh in fhs:
-            if hasattr(fh, "read"):
-                name = getattr(fh, "name", None)
-                path = Path(name) if name else None
-            else:
-                if not isinstance(fh, Path):
-                    fh = Path(fh)
-                path = fh
-                fh = path.open("rb")
-
-            magic = fh.read(4)
-            fh.seek(-4, io.SEEK_CUR)
-
-            if magic == b"# Di" and len(fhs) == 1:
-                # Try reading the disk files from this descriptor
-                # Otherwise we assume that the other file handles are the appropriate disks
-                self.descriptor = DiskDescriptor.parse(fh.read().decode())
-
-                if self.descriptor.attr["parentCID"] != "ffffffff":
-                    self.parent = open_parent(path.parent, self.descriptor.attr["parentFileNameHint"])
-
-                for extent in self.descriptor.extents:
-                    if extent.type in ["SPARSE", "VMFSSPARSE", "SESPARSE"]:
-                        sdisk_fh = path.with_name(extent.filename).open("rb")
-                        self.disks.append(SparseDisk(sdisk_fh, parent=self.parent))
-                    elif extent.type in ["VMFS", "FLAT"]:
-                        rdisk_fh = path.with_name(extent.filename).open("rb")
-                        self.disks.append(RawDisk(rdisk_fh, extent.sectors * SECTOR_SIZE))
-
-            elif magic in (COWD_MAGIC, VMDK_MAGIC, SESPARSE_MAGIC):
-                sparse_disk = SparseDisk(fh)
-
-                if sparse_disk.descriptor and sparse_disk.descriptor.attr["parentCID"] != "ffffffff":
-                    sparse_disk.parent = open_parent(path.parent, sparse_disk.descriptor.attr["parentFileNameHint"])
-                self.disks.append(sparse_disk)
-
-            else:
-                self.disks.append(RawDisk(fh))
-
-        size = 0
-        for disk in self.disks:
-            if size != 0:
-                self._disk_offsets.append(self.sector_count)
-            disk.offset = size
-            disk.sector_offset = self.sector_count
-            size += disk.size
-            self.sector_count += disk.sector_count
-
-        super().__init__(size)
-
-    def read_sectors(self, sector: int, count: int) -> bytes:
-        log.debug("VMDK::read_sectors(0x%x, 0x%x)", sector, count)
-
-        sectors_read = []
-
-        disk_idx = bisect_right(self._disk_offsets, sector)
-
-        while count > 0:
-            disk = self.disks[disk_idx]
-
-            disk_remaining_sectors = disk.sector_count - (sector - disk.sector_offset)
-            disk_sectors = min(disk_remaining_sectors, count)
-
-            sectors_read.append(disk.read_sectors(sector, disk_sectors))
-
-            sector += disk_sectors
-            count -= disk_sectors
-            disk_idx += 1
-
-        return b"".join(sectors_read)
-
-    def _read(self, offset: int, length: int) -> bytes:
-        log.debug("VMDK::_read(0x%x, 0x%x)", offset, length)
-
-        sector = offset // SECTOR_SIZE
-        count = (length + SECTOR_SIZE - 1) // SECTOR_SIZE
-
-        return self.read_sectors(sector, count)
+SECTOR_SIZE = 512
 
 
-class RawDisk:
-    def __init__(self, fh: BinaryIO, size: int | None = None, offset: int = 0, sector_offset: int = 0):
-        self.fh = fh
-        self.offset = offset
-        self.sector_offset = sector_offset
+class VMDK:
+    """VMware Virtual Machine Disk (VMDK) implementation.
 
-        if not size:
-            fh.seek(0, io.SEEK_END)
-            self.size = fh.tell()
-            fh.seek(0)
-        else:
-            self.size = size
+    In most cases, parent disk lookup will be done automatically when provided with a ``Path`` object.
+    Sometimes you may need to provide the parent disk manually (e.g. VirtualBox snapshots disks).
 
-        self.sector_count = self.size // SECTOR_SIZE
+    Args:
+        fh: File-like object or path for the VMDK file.
+        parent: Optional file-like object for the parent disk.
+    """
 
-        self.read = fh.read
-        self.seek = fh.seek
-        self.tell = fh.tell
-
-    def read_sectors(self, sector: int, count: int) -> bytes:
-        log.debug("RawDisk::read_sectors(0x%x)", sector)
-
-        self.fh.seek((sector - self.sector_offset) * SECTOR_SIZE)
-        return self.fh.read(count * SECTOR_SIZE)
-
-
-class SparseDisk:
-    def __init__(
-        self, fh: BinaryIO, parent: VMDK | RawDisk | SparseDisk | None = None, offset: int = 0, sector_offset: int = 0
-    ):
+    def __init__(self, fh: BinaryIO | Path, parent: BinaryIO | VMDK | None = None):
         self.fh = fh
         self.parent = parent
-        self.offset = offset
-        self.sector_offset = sector_offset
+        self.descriptor: DiskDescriptor | None = None
+        self.extents: list[Extent] = []
+        self._extents_offsets: list[int] = []
 
-        fh.seek(0, io.SEEK_END)
-        self.filesize = fh.tell()
-        fh.seek(0, io.SEEK_SET)
-        self.descriptor = None
-
-        self.header = SparseExtentHeader(fh)
-        if self.header.magic in (VMDK_MAGIC, COWD_MAGIC):
-            self.is_sesparse = False
-
-            if ctypes.c_int64(self.header.primary_grain_directory_offset).value == -1:
-                # Footer starts -1024 from the end
-                fh.seek(-1024, io.SEEK_END)
-                self.header = SparseExtentHeader(fh)
-
-            if self.header.magic == VMDK_MAGIC:
-                grain_table_coverage = self.header.num_grain_table_entries * self.header.grain_size
-                self._grain_directory_size = (self.header.capacity + grain_table_coverage - 1) // grain_table_coverage
-                self._grain_table_size = self.header.num_grain_table_entries
-
-                if self.header.descriptor_size > 0:
-                    fh.seek(self.header.descriptor_offset * SECTOR_SIZE)
-                    descriptor_buf = fh.read(self.header.descriptor_size * SECTOR_SIZE)
-                    self.descriptor = DiskDescriptor.parse(descriptor_buf.split(b"\x00", 1)[0].decode())
-
-            elif self.header.magic == COWD_MAGIC:
-                self._grain_directory_size = self.header.num_grain_directory_entries
-                self._grain_table_size = 4096
-
-            grain_directory_offset = self.header.primary_grain_directory_offset
-            self._grain_entry_type = c_vmdk.uint32
-
-            self._grain_directory = c_vmdk.uint32[self._grain_directory_size](fh)
-
-        elif self.header.magic == c_vmdk.SESPARSE_CONST_HEADER_MAGIC:
-            self.is_sesparse = True
-
-            self._grain_directory_size = self.header.grain_directory_size * SECTOR_SIZE // 8
-            self._grain_table_size = self.header.grain_table_size * SECTOR_SIZE // 8
-
-            grain_directory_offset = self.header.grain_directory_offset
-            self._grain_entry_type = c_vmdk.uint64
-
-        self.fh.seek(grain_directory_offset * SECTOR_SIZE)
-        self._grain_directory = self._grain_entry_type[self._grain_directory_size](fh)
-
-        self.size = self.header.capacity * SECTOR_SIZE
-        self.sector_count = self.header.capacity
-
-        self._lookup_grain_table = lru_cache(128)(self._lookup_grain_table)
-
-    def _lookup_grain_table(self, directory: int) -> list[int]:
-        gtbl_offset = self._grain_directory[directory]
-
-        if self.is_sesparse:
-            # qemu/block/vmdk.c:
-            # Top most nibble is 0x1 if grain table is allocated.
-            # strict check - top most 4 bytes must be 0x10000000 since max
-            # supported size is 64TB for disk - so no more than 64TB / 16MB
-            # grain directories which is smaller than uint32,
-            # where 16MB is the only supported default grain table coverage.
-            if not gtbl_offset or gtbl_offset & 0xFFFFFFFF00000000 != 0x1000000000000000:
-                table = None
-            else:
-                gtbl_offset &= 0x00000000FFFFFFFF
-                gtbl_offset = (
-                    self.header.grain_tables_offset + gtbl_offset * (self._grain_table_size * 8) // SECTOR_SIZE
-                )
-                self.fh.seek(gtbl_offset * SECTOR_SIZE)
-                table = self._grain_entry_type[self._grain_table_size](self.fh)
+        opened_fh = False
+        if isinstance(fh, Path):
+            path = fh
+            fh = path.open("rb")
+            opened_fh = True
         else:
-            if gtbl_offset:
-                self.fh.seek(gtbl_offset * SECTOR_SIZE)
-                table = self._grain_entry_type[self._grain_table_size](self.fh)
-            else:
-                table = None
+            path = None
 
-        return table
+        fh.seek(0)
+        if fh.read(4) == b"# Di":
+            if path is None:
+                # Try to get the path from the file handle if possible
+                name = getattr(fh, "name", None)
+                path = Path(name) if name else None
 
-    def _lookup_grain(self, grain: int) -> int:
-        gdir_entry, gtbl_entry = divmod(grain, self._grain_table_size)
-        table = self._lookup_grain_table(gdir_entry)
+            if path is None:
+                # If we don't have a path, we can't open the linked extents
+                raise TypeError("Providing a path is required to read VMDK descriptor files")
 
-        if table:
-            grain_entry = table[gtbl_entry]
-            if self.is_sesparse:
-                # SESparse uses a different method of specifying unallocated/sparse/allocated grains
-                # However, we can re-use the normal sparse logic of returning 0 for unallocated, 1 for
-                # sparse and >1 for allocated grains, since a grain of 0 or 1 isn't possible in SESparse.
-                grain_type = grain_entry & c_vmdk.SESPARSE_GRAIN_TYPE_MASK
-                if grain_type in (c_vmdk.SESPARSE_GRAIN_TYPE_UNALLOCATED, c_vmdk.SESPARSE_GRAIN_TYPE_FALLTHROUGH):
-                    # Unallocated or scsi unmapped, fallthrough
-                    return 0
-                if grain_type == c_vmdk.SESPARSE_GRAIN_TYPE_ZERO:
-                    # Sparse, zero grain
-                    return 1
-                if grain_type == c_vmdk.SESPARSE_GRAIN_TYPE_ALLOCATED:
-                    # Allocated
-                    cluster_sector_hi = (grain_entry & 0x0FFF000000000000) >> 48
-                    cluster_sector_lo = (grain_entry & 0x0000FFFFFFFFFFFF) << 12
-                    cluster_sector = cluster_sector_hi | cluster_sector_lo
-                    return self.header.grains_offset + cluster_sector * self.header.grain_size
+            # Try reading the disk files from this descriptor
+            # Otherwise we assume that the other file handles are the appropriate disks
+            fh.seek(0)
+            self.descriptor = DiskDescriptor(fh.read().decode())
+            if opened_fh:
+                # Clean up the file handle if we opened it ourselves
+                fh.close()
 
-                raise ValueError("Unknown grain type")
+            # The descriptor file determines the parent
+            if self.parent is None and self.descriptor.attributes["parentCID"] != "ffffffff":
+                self.parent = open_parent(path.parent, self.descriptor.attributes["parentFileNameHint"])
 
-            return grain_entry
+            # Open all extents listed in the descriptor
+            for extent_descriptor in self.descriptor.extents:
+                extent_path = path.with_name(extent_descriptor.filename)
+                extent = Extent.from_fh(extent_path.open("rb"), extent_path)
 
-        return 0
-
-    def get_runs(self, sector: int, count: int) -> list[tuple[int, int, int, int | None]]:
-        disk_sector = sector - self.sector_offset
-
-        run_type = None
-        run_offset = 0
-        run_count = 0
-        run_parent = None
-        next_grain_sector = 0
-
-        read_sector = disk_sector
-        read_count = count
-
-        runs = []
-
-        if read_count == 0:
-            return runs
-
-        while read_count > 0:
-            grain, grain_offset = divmod(read_sector, self.header.grain_size)
-            grain_sector = self._lookup_grain(grain)
-            read_sector_count = min(read_count, self.header.grain_size - grain_offset)
-
-            if (run_type == 0 and grain_sector == 0) or (run_type == 1 and grain_sector == 1):
-                run_count += read_sector_count
-            elif run_type and run_type > 1 and grain_sector == next_grain_sector:
-                next_grain_sector += self.header.grain_size
-                run_count += read_sector_count
-            else:
-                if run_type is not None:
-                    runs.append((run_type, run_offset, run_count, run_parent))
-                    run_type = None
-                    run_count = 0
-                    run_parent = None
-                if grain_sector == 0:
-                    run_type = 0
-                    run_count += read_sector_count
-                    run_parent = self.sector_offset + read_sector
-                elif grain_sector == 1:
-                    run_type = 1
-                    run_count += read_sector_count
-                else:
-                    run_type = grain_sector
-                    run_offset = grain_offset
-                    run_count += read_sector_count
-                    next_grain_sector = grain_sector + self.header.grain_size
-
-            read_count -= read_sector_count
-            read_sector += read_sector_count
-
-        assert run_type is not None
-        runs.append((run_type, run_offset, run_count, run_parent))
-
-        return runs
-
-    def read_sectors(self, sector: int, count: int) -> bytes:
-        log.debug("SparseDisk::read_sectors(0x%x, 0x%x)", sector, count)
-
-        runs = self.get_runs(sector, count)
-        sectors_read = []
-
-        for run_type, run_offset, run_count, run_parent in runs:
-            # Grain not present
-            if run_type == 0:
-                if self.parent:
-                    sector_data = self.parent.read_sectors(run_parent, run_count)
-                else:
-                    sector_data = b"\x00" * (run_count * SECTOR_SIZE)
-                sectors_read.append(sector_data)
-                continue
-
-            # Sparse grain
-            if run_type == 1:
-                sectors_read.append(b"\x00" * (run_count * SECTOR_SIZE))
-                continue
-
-            # Uncompressed grain
-            if self.header.flags & c_vmdk.SPARSEFLAG_COMPRESSED == 0:
-                self.fh.seek((run_type + run_offset) * SECTOR_SIZE)
-                sector_data = self.fh.read(run_count * SECTOR_SIZE)
-                sectors_read.append(sector_data)
-                continue
-
-            # Compressed grain
-            while run_count > 0:
-                # We consolidate grain runs in get_runs, but we can't read a contiguous stream of compressed grains
-                # So loop over the consolidated grains
-                offset = run_offset * SECTOR_SIZE
-                grain_remaining = self.header.grain_size - run_offset
-                read_count = min(run_count, grain_remaining)
-
-                buf = self._read_compressed_grain(run_type)
-                sectors_read.append(buf[offset : offset + read_count * SECTOR_SIZE])
-
-                # If we loop, we're going to the next run, which means we'll start at offset 0
-                run_offset = 0
-                run_type += self.header.grain_size
-                run_count -= read_count
-
-        return b"".join(sectors_read)
-
-    def _read_compressed_grain(self, sector: int) -> bytes:
-        self.fh.seek(sector * SECTOR_SIZE)
-        buf = self.fh.read(SECTOR_SIZE)
-
-        if self.header.flags & c_vmdk.SPARSEFLAG_EMBEDDED_LBA:
-            header_len = 12
-            lba_header = c_vmdk.SparseGrainLBAHeaderOnDisk(buf)
-            compressed_len = lba_header.cmp_size
+                self.extents.append(extent)
         else:
-            header_len = 4
-            compressed_len = c_vmdk.uint32(buf)
+            # Single file VMDK
+            extent = Extent.from_fh(fh, path)
 
-        if compressed_len + header_len > SECTOR_SIZE:
-            # Officially this is padded to SECTOR_SIZE, but we don't really care
-            remaining_len = header_len + compressed_len - SECTOR_SIZE
-            self.fh.seek((sector + 1) * SECTOR_SIZE)
-            buf += self.fh.read(remaining_len)
+            # The single file VMDK may have a parent in the embedded descriptor
+            if extent.descriptor and extent.descriptor.attributes["parentCID"] != "ffffffff":
+                self.parent = open_parent(path.parent, extent.descriptor.attributes["parentFileNameHint"])
 
-        return zlib.decompress(buf[header_len : header_len + compressed_len])
+            self.extents.append(extent)
+
+        # Make a lookup table of extent offsets and calculate total size
+        offset = 0
+        for extent in self.extents:
+            offset += extent.size
+            self._extents_offsets.append(offset)
+
+        self.size = offset
+
+    def __repr__(self) -> str:
+        return f"<VMDK size={self.size} extents={len(self.extents)} parent={self.parent is not None}>"
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(
+        self, exc_type: type[BaseException] | None, exc_value: BaseException | None, traceback: TracebackType | None
+    ) -> None:
+        self.close()
+
+    def open(self) -> ExtentStream:
+        """Open a stream to read the VMDK file."""
+        return ExtentStream(self)
+
+    def close(self) -> None:
+        """Close the VMDK file and any associated resources we opened."""
+        for extent in self.extents:
+            extent.close()
 
 
-class SparseExtentHeader:
-    def __init__(self, fh: BinaryIO):
+class ExtentStream(AlignedStream):
+    def __init__(self, vmdk: VMDK):
+        self.vmdk = vmdk
+        self.parent = vmdk.parent.open() if isinstance(vmdk.parent, VMDK) else vmdk.parent
+
+        self.extents = vmdk.extents
+        self._offsets = vmdk._extents_offsets
+
+        # Try to determine optimal alignment from the grain size of the first sparse extent
+        # This should reduce the amount of slicing we need to do when reading
+        align = SECTOR_SIZE
+        for extent in self.extents:
+            if isinstance(extent, SparseExtent):
+                align = extent._grain_size
+                break
+
+        super().__init__(vmdk.size, align=align)
+
+    def _read(self, offset: int, length: int) -> bytes:
+        result = []
+
+        while length > 0:
+            idx = bisect_right(self._offsets, offset)
+            if idx > len(self._offsets) - 1:
+                break
+
+            extent = self.extents[idx]
+            extent_offset = 0 if idx == 0 else self._offsets[idx - 1]
+            offset_in_extent = offset - extent_offset
+            read_size = min(length, extent.size - offset_in_extent)
+
+            if isinstance(extent, RawExtent):
+                extent.fh.seek(extent.offset + offset_in_extent)
+                result.append(extent.fh.read(read_size))
+            elif isinstance(extent, SparseExtent):
+                grain_idx, offset_in_grain = divmod(offset_in_extent, extent._grain_size)
+                grain_size = extent._last_grain_size if grain_idx == extent._last_grain_index else extent._grain_size
+
+                if offset_in_grain >= grain_size:
+                    break
+
+                read_size = min(read_size, grain_size - offset_in_grain)
+
+                grain = extent._grain(grain_idx)
+                # Unallocated grain
+                if grain == 0:
+                    if self.parent is not None:
+                        self.parent.seek(offset)
+                        buf = self.parent.read(read_size)
+                    else:
+                        buf = b"\x00" * read_size
+
+                # Sparse grain
+                elif grain == 1:
+                    buf = b"\x00" * read_size
+
+                # Allocated grain
+                else:
+                    buf = extent._read_grain(grain)[offset_in_grain : offset_in_grain + read_size]
+
+                result.append(buf)
+
+            offset += read_size
+            length -= read_size
+
+        return b"".join(result)
+
+
+class Extent:
+    """Base class for VMDK extents.
+
+    Args:
+        fh: File-like object for the extent.
+        path: Optional path for the extent.
+        size: Size of the extent in bytes.
+    """
+
+    def __init__(self, fh: BinaryIO, path: Path | None, size: int):
+        self.fh = fh
+        self.path = path
+        self.size = size
+
+    def __repr__(self) -> str:
+        return f"<Extent size={self.size} path={self.path}>"
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(
+        self, exc_type: type[BaseException] | None, exc_value: BaseException | None, traceback: TracebackType | None
+    ) -> None:
+        self.close()
+
+    @cached_property
+    def descriptor(self) -> DiskDescriptor | None:
+        """The disk descriptor if available."""
+        return None
+
+    @classmethod
+    def from_fh(
+        cls,
+        fh: BinaryIO,
+        path: Path | None,
+        size: int | None = None,
+        offset: int | None = None,
+    ) -> RawExtent | HostedSparseExtent | SESparseExtent | COWDisk:
+        """Create an extent from a file-like object.
+
+        Args:
+            fh: File-like object for the extent.
+            path: Optional path for the extent.
+            size: Optional size hint of the extent in bytes.
+            offset: Optional offset of the extent in bytes.
+        """
+        fh.seek(0)
         magic = fh.read(4)
-        fh.seek(-4, io.SEEK_CUR)
+        fh.seek(0)
 
-        if magic == VMDK_MAGIC:
-            self.hdr = c_vmdk.VMDKSparseExtentHeader(fh)
-        elif magic == SESPARSE_MAGIC:
-            self.hdr = c_vmdk.VMDKSESparseConstHeader(fh)
-        elif magic == COWD_MAGIC:
-            self.hdr = c_vmdk.COWDSparseExtentHeader(fh)
-        else:
-            raise NotImplementedError("Unsupported sparse extent")
+        if magic == SPARSE_MAGIC:
+            return HostedSparseExtent(fh, path)
+        if magic == SESPARSE_MAGIC:
+            return SESparseExtent(fh, path)
+        if magic == COWD_MAGIC:
+            return COWDisk(fh, path)
 
-    def __getattr__(self, attr: str) -> Any:
-        return getattr(self.hdr, attr)
+        return RawExtent(fh, path, size, offset)
+
+    def close(self) -> None:
+        """Close the extent and any associated resources we opened."""
+        if self.path is not None:
+            self.fh.close()
+
+
+class RawExtent(Extent):
+    """Raw extent implementation.
+
+    Args:
+        fh: File-like object for the extent.
+        path: Optional path for the extent.
+        size: Optional size of the extent in bytes. If not provided, it will be determined from the file size.
+        offset: Optional offset of the extent in bytes in the source file.
+    """
+
+    def __init__(self, fh: BinaryIO, path: Path | None, size: int | None = None, offset: int | None = None):
+        self.offset = offset or 0
+
+        if size is None:
+            fh.seek(0, io.SEEK_END)
+            size = fh.tell() - self.offset
+            fh.seek(0)
+
+        super().__init__(fh, path, size)
+
+
+class SparseExtent(Extent):
+    """Base class for sparse extents.
+
+    Args:
+        fh: File-like object for the extent.
+        path: Optional path for the extent.
+    """
+
+    def __init__(self, fh: BinaryIO, path: Path | None):
+        super().__init__(fh, path, self._capacity)
+        self._last_grain_index, self._last_grain_size = divmod(self._capacity, self._grain_size)
+
+        self._gt = lru_cache(128)(self._gt)
+
+    @cached_property
+    def _capacity(self) -> int:
+        """The extent capacity in bytes."""
+        raise NotImplementedError
+
+    @cached_property
+    def _grain_size(self) -> int:
+        """The grain size in bytes."""
+        raise NotImplementedError
+
+    @cached_property
+    def _num_gte(self) -> int:
+        """The total number of grain table entries."""
+        return self._last_grain_index + (1 if self._last_grain_size > 0 else 0)
+
+    @cached_property
+    def _num_gte_per_gt(self) -> int:
+        """The number of grain table entries per grain table."""
+        raise NotImplementedError
+
+    @cached_property
+    def _gd(self) -> list[int]:
+        """The grain directory."""
+        raise NotImplementedError
+
+    def _gt(self, idx: int) -> list[int] | None:
+        """Get the grain table at the specified index.
+
+        Args:
+            idx: The grain table index.
+        """
+        raise NotImplementedError
+
+    def _grain(self, idx: int) -> int:
+        """Get the grain number (sector) for the specified grain index.
+
+        Args:
+            idx: The grain index.
+        """
+        table, entry = divmod(idx, self._num_gte_per_gt)
+        if (gt := self._gt(table)) is None:
+            return 0
+        return gt[entry]
+
+    def _read_grain(self, grain: int) -> bytes:
+        """Read the specified grain.
+
+        Args:
+            grain: The grain number.
+        """
+        self.fh.seek(grain * SECTOR_SIZE)
+        return self.fh.read(self._grain_size)
+
+
+class HostedSparseExtent(SparseExtent):
+    """Hosted sparse extent implementation.
+
+    Args:
+        fh: File-like object for the extent.
+        path: Optional path for the extent.
+    """
+
+    def __init__(self, fh: BinaryIO, path: Path | None):
+        fh.seek(0)
+        self.header = c_vmdk.SparseExtentHeader(fh)
+        if self.header.gdOffset == c_vmdk.SPARSE_GD_AT_END:
+            # Sparse extents can have a footer at the end of the file
+            # TODO: find test data for this
+            fh.seek(-3 * SECTOR_SIZE, io.SEEK_END)
+            if (marker := c_vmdk.SparseMetaDataMarker(fh)).size == 0 and marker.type == c_vmdk.GRAIN_MARKER_FOOTER:
+                self.header = c_vmdk.SparseExtentHeader(fh)
+
+        super().__init__(fh, path)
+
+    @cached_property
+    def _capacity(self) -> int:
+        return self.header.capacity * SECTOR_SIZE
+
+    @cached_property
+    def _grain_size(self) -> int:
+        return self.header.grainSize * SECTOR_SIZE
+
+    @cached_property
+    def _num_gte_per_gt(self) -> int:
+        return self.header.numGTEsPerGT
+
+    @cached_property
+    def _gd(self) -> list[int]:
+        num_gt = (self._num_gte + self._num_gte_per_gt - 1) // self._num_gte_per_gt
+        self.fh.seek(self.header.gdOffset * SECTOR_SIZE)
+        return c_vmdk.uint32[num_gt](self.fh)
+
+    def _gt(self, idx: int) -> list[int] | None:
+        if (offset := self._gd[idx]) == 0:
+            return None
+
+        self.fh.seek(offset * SECTOR_SIZE)
+        return c_vmdk.uint32[self._num_gte_per_gt](self.fh)
+
+    @cached_property
+    def descriptor(self) -> DiskDescriptor | None:
+        if self.header.descriptorSize > 0:
+            self.fh.seek(self.header.descriptorOffset * SECTOR_SIZE)
+            buf = self.fh.read(self.header.descriptorSize * SECTOR_SIZE)
+            return DiskDescriptor(buf.split(b"\x00", 1)[0].decode())
+        return None
+
+    def _read_grain(self, grain: int) -> bytes:
+        buf = super()._read_grain(grain)
+        if self.header.flags & c_vmdk.SPARSEFLAG_COMPRESSED:
+            if self.header.flags & c_vmdk.SPARSEFLAG_EMBEDDED_LBA:
+                header_size = 12
+                header = c_vmdk.SparseGrainLBAHeader(buf)
+                compressed_size = header.cmpSize
+            else:
+                header_size = 4
+                compressed_size = c_vmdk.uint32(buf)
+
+            buf = zlib.decompress(buf[header_size : header_size + compressed_size])
+
+        return buf
+
+
+class SESparseExtent(SparseExtent):
+    """SESparse extent implementation.
+
+    Args:
+        fh: File-like object for the extent.
+        path: Optional path for the extent.
+    """
+
+    def __init__(self, fh: BinaryIO, path: Path | None):
+        fh.seek(0)
+        self.header = c_vmdk.SESparseConstHeader(fh)
+
+        super().__init__(fh, path)
+
+    @cached_property
+    def _capacity(self) -> int:
+        return self.header.capacity * SECTOR_SIZE
+
+    @cached_property
+    def _grain_size(self) -> int:
+        return self.header.grainSize * SECTOR_SIZE
+
+    @cached_property
+    def _num_gte_per_gt(self) -> int:
+        return (self.header.grainTableSize * SECTOR_SIZE) // 8
+
+    @cached_property
+    def _gd(self) -> list[int]:
+        num_gt = (self.header.grainDirectory.size * SECTOR_SIZE) // 8
+        self.fh.seek(self.header.grainDirectory.offset * SECTOR_SIZE)
+        return c_vmdk.uint64[num_gt](self.fh)
+
+    def _gt(self, idx: int) -> list[int] | None:
+        offset = self._gd[idx]
+
+        # qemu/block/vmdk.c:
+        # Top most nibble is 0x1 if grain table is allocated.
+        # strict check - top most 4 bytes must be 0x10000000 since max
+        # supported size is 64TB for disk - so no more than 64TB / 16MB
+        # grain directories which is smaller than uint32,
+        # where 16MB is the only supported default grain table coverage.
+        if offset == 0 or offset & 0xFFFFFFFF00000000 != 0x1000000000000000:
+            return None
+
+        offset &= 0x00000000FFFFFFFF
+        self.fh.seek((self.header.grainTables.offset * SECTOR_SIZE) + (offset * (self._num_gte_per_gt * 8)))
+        return c_vmdk.uint64[self._num_gte_per_gt](self.fh)
+
+    def _grain(self, idx: int) -> int:
+        # SESparse uses a different method of specifying unallocated/sparse/allocated grains
+        # However, we can re-use the normal sparse logic of returning 0 for unallocated, 1 for
+        # sparse and >1 for allocated grains, since a grain of 0 or 1 isn't possible in SESparse.
+        table, entry = divmod(idx, self._num_gte_per_gt)
+        if (gt := self._gt(table)) is None:
+            return 0
+        grain = gt[entry]
+
+        grain_type = grain & c_vmdk.SESPARSE_GRAIN_TYPE_MASK
+        if grain_type in (c_vmdk.SESPARSE_GRAIN_TYPE_UNALLOCATED, c_vmdk.SESPARSE_GRAIN_TYPE_FALLTHROUGH):
+            # Unallocated or scsi unmapped, fallthrough
+            return 0
+        if grain_type == c_vmdk.SESPARSE_GRAIN_TYPE_ZERO:
+            # Sparse, zero grain
+            return 1
+        if grain_type == c_vmdk.SESPARSE_GRAIN_TYPE_ALLOCATED:
+            # Allocated
+            cluster_sector_hi = (grain & 0x0FFF000000000000) >> 48
+            cluster_sector_lo = (grain & 0x0000FFFFFFFFFFFF) << 12
+            cluster_sector = cluster_sector_hi | cluster_sector_lo
+            # We need to return the sector
+            return self.header.grain.offset + cluster_sector * self.header.grainSize
+
+        raise ValueError("Unknown grain type")
+
+
+class COWDisk(SparseExtent):
+    """COW disk extent implementation.
+
+    TODO: Regenerate test data and fix implementation.
+
+    Args:
+        fh: File-like object for the extent.
+        path: Optional path for the extent.
+    """
+
+    def __init__(self, fh: BinaryIO, path: Path | None):
+        fh.seek(0)
+        self.header = c_vmdk.COWDisk_Header(fh)
+        super().__init__(fh, path)
+
+    @cached_property
+    def _capacity(self) -> int:
+        return self.header.numSectors * SECTOR_SIZE
+
+    @cached_property
+    def _grain_size(self) -> int:
+        return self.header.grainSize * SECTOR_SIZE
+
+    @cached_property
+    def _gte_type(self) -> c_vmdk.uint32 | c_vmdk.uint64:
+        return c_vmdk.uint32
+
+    @cached_property
+    def _num_gte_per_gt(self) -> int:
+        return 4096
+
+    @cached_property
+    def _gd_size(self) -> int:
+        return self.header.numGDEntries
+
+    @cached_property
+    def _gd_offset(self) -> int:
+        return self.header.gdOffset * SECTOR_SIZE
 
 
 RE_EXTENT_DESCRIPTOR = re.compile(
     r"""
     ^
-    (?P<access_mode>RW|RDONLY|NOACCESS)\s
-    (?P<sectors>\d+)\s
-    (?P<type>SESPARSE|SPARSE|ZERO|FLAT|VMFS|VMFSSPARSE|VMFSRDM|VMFSRAW)
+    (?P<access>RW|RDONLY|NOACCESS)\s
+    (?P<size>\d+)\s
+    (?P<type>[^\s]+)
     (\s(?P<filename>\".+\"))?
-    (\s(?P<start_sector>\d+))?
-    (\s(?P<partition_uuid>\S+))?
-    (\s(?P<device_identifier>\S+))?
-    $
+    (\s(?P<offset>\d+))?
     """,
     re.VERBOSE,
 )
 
 
-@dataclass
-class ExtentDescriptor:
-    raw: str
-    access_mode: str
-    sectors: int
+class ExtentDescriptor(NamedTuple):
+    access: str
+    """The access mode of the extent (RW, RDONLY, NOACCESS)."""
+    size: int
+    """The size of the extent in sectors."""
     type: str
+    """The type of the extent (e.g., SPARSE, FLAT, ZERO)."""
     filename: str | None = None
-    start_sector: int | None = None
-    partition_uuid: str | None = None
-    device_identifier: str | None = None
-
-    def __post_init__(self) -> None:
-        self.sectors = int(self.sectors)
-
-        if self.filename:
-            self.filename = self.filename.strip('"')
-
-        if self.start_sector:
-            self.start_sector = int(self.start_sector)
-
-    def __repr__(self) -> str:
-        return f"<ExtentDescriptor {self.raw}>"
-
-    def __str__(self) -> str:
-        return self.raw
+    """The filename of the extent."""
+    offset: int | None = None
+    """Optional offset of the extent data in the extent file."""
 
 
 class DiskDescriptor:
-    def __init__(
-        self, attr: dict, extents: list[ExtentDescriptor], disk_db: dict, sectors: int, raw_config: str | None = None
-    ):
-        self.attr = attr
-        self.extents = extents
-        self.ddb = disk_db
-        self.sectors = sectors
-        self.raw = raw_config
+    """VMDK disk descriptor.
 
-    @classmethod
-    def parse(cls, vmdk_config: str) -> DiskDescriptor:
-        """Return :class:`DiskDescriptor` based on the provided ``vmdk_config``.
+    Args:
+        raw: The raw descriptor data as a string.
+    """
 
-        Resources:
-            - https://github.com/libyal/libvmdk/blob/main/documentation/VMWare%20Virtual%20Disk%20Format%20(VMDK).asciidoc
-        """
+    def __init__(self, raw: str):
+        self.raw = raw
+        self.attributes = {}
+        self.extents: list[ExtentDescriptor] = []
 
-        descriptor_settings = {}
-        extents: list[ExtentDescriptor] = []
-        disk_db = {}
-        sectors = 0
-
-        for line in vmdk_config.split("\n"):
-            line = line.strip()
-
-            if not line or line.startswith("#"):
+        for line in raw.splitlines():
+            if not (line := line.strip()) or line.startswith("#"):
                 continue
 
             if line.startswith(("RW ", "RDONLY ", "NOACCESS ")):
-                match = RE_EXTENT_DESCRIPTOR.search(line)
-
-                if not match:
+                if not (match := RE_EXTENT_DESCRIPTOR.search(line)):
                     log.warning("Unexpected ExtentDescriptor format in vmdk config: %s, ignoring", line)
                     continue
 
-                extent = ExtentDescriptor(raw=line, **match.groupdict())
-                sectors += extent.sectors
-                extents.append(extent)
-                continue
-
-            setting, _, value = line.partition("=")
-            setting = setting.strip()
-            value = value.strip(' "')
-
-            if setting.startswith("ddb."):
-                disk_db[setting] = value
+                self.extents.append(
+                    ExtentDescriptor(
+                        access=match.group("access"),
+                        size=int(match.group("size")),
+                        type=match.group("type"),
+                        filename=match.group("filename").strip('"') if match.group("filename") else None,
+                        offset=int(match.group("offset")) if match.group("offset") else None,
+                    )
+                )
             else:
-                descriptor_settings[setting] = value
-
-        return cls(descriptor_settings, extents, disk_db, sectors, vmdk_config)
-
-    def __str__(self) -> str:
-        str_template = textwrap.dedent(
-            """\
-        # Disk DescriptorFile
-        version=1
-        {}
-
-        # Extent Description
-        {}
-
-        # The Disk Data Base
-        #DDB
-
-        {}"""
-        )
-
-        descriptor_settings = []
-        for setting, value in self.attr.items():
-            if setting != "version":
-                descriptor_settings.append(f"{setting}={value}")
-        descriptor_settings = "\n".join(descriptor_settings)
-
-        extents = "\n".join(map(str, self.extents))
-
-        disk_db = []
-        for setting, value in self.ddb.items():
-            disk_db.append(f'{setting} = "{value}"')
-        disk_db = "\n".join(disk_db)
-
-        return str_template.format(descriptor_settings, extents, disk_db)
+                key, _, value = line.partition("=")
+                self.attributes[key.strip()] = value.strip(' "')
 
 
-def open_parent(path: Path, filename_hint: str) -> VMDK:
+def open_parent(path: Path, hint: str) -> VMDK:
+    """Open the parent VMDK disk based on the filename hint.
+
+    Args:
+        path: The directory path to look for the parent disk.
+        hint: The filename hint for the parent disk.
+    """
     try:
-        filename_hint = filename_hint.replace("\\", "/")
-        hint_path, _, filename = filename_hint.rpartition("/")
-        filepath = path.joinpath(filename)
-        if not filepath.exists():
-            filepath = path.joinpath(filename_hint)
-            if not filepath.exists():
-                _, _, hint_path_name = hint_path.rpartition("/")
-                filepath = path.parent.joinpath(hint_path_name).joinpath(filename)
-        vmdk = VMDK(filepath)
-    except Exception as err:
-        raise IOError(f"Failed to open parent disk with hint {filename_hint} from path {path}: {err}")
+        hint = hint.replace("\\", "/")
+        hint_path, _, filename = hint.rpartition("/")
 
-    return vmdk
+        if not (file_path := path.joinpath(filename)).exists():
+            file_path = path.joinpath(hint)
+            if not file_path.exists():
+                _, _, hint_path_name = hint_path.rpartition("/")
+                file_path = path.parent.joinpath(hint_path_name).joinpath(filename)
+
+        return VMDK(file_path)
+    except Exception as err:
+        raise IOError(f"Failed to open parent disk with hint {hint} from path {path}: {err}")
