@@ -65,11 +65,6 @@ def differencing_vhdx() -> Iterator[BinaryIO]:
 
 
 @pytest.fixture
-def sesparse_vmdk() -> Iterator[BinaryIO]:
-    yield from open_file_gz("_data/disk/vmdk/sesparse.vmdk.gz")
-
-
-@pytest.fixture
 def plain_hdd() -> Path:
     return absolute_path("_data/disk/hdd/plain.hdd")
 

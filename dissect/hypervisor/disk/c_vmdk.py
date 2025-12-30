@@ -1,95 +1,50 @@
 from __future__ import annotations
 
-import struct
-
 from dissect.cstruct import cstruct
 
+# https://github.com/vmware/open-vmdk/blob/master/vmdk/vmware_vmdk.h
 vmdk_def = """
-typedef struct {
-    char    magic[4];                           // Magic "KDMV" LE
-    uint32  version;                            // Version
-    uint32  flags;                              // Flags
-    uint64  capacity;                           // The maximum data number of sectors (capacity)
-    uint64  grain_size;                         // The grain number of sectors
-    uint64  descriptor_offset;                  // The descriptor sector number
-    uint64  descriptor_size;                    // The descriptor number of sectors
-    uint32  num_grain_table_entries;            // The number of grain table entries
-    uint64  secondary_grain_directory_offset;   // The secondary grain directory sector number
-    uint64  primary_grain_directory_offset;     // The primary grain directory sector number
-    uint64  overhead;                           // The metadata (overhead) number of sectors
-    uint8   is_dirty;                           // Value to indicate the VMDK was cleanly closed
-    char    single_end_line_char;               // The single end of line character
-    char    non_end_line_char;                  // A non end of line character
-    char    double_end_line_chars[2];           // The double end of line characters
-    uint16  compress_algorithm;                 // The compression method
-    char    pad[433];                           // Padding
-} VMDKSparseExtentHeader;
+typedef struct SparseExtentHeader {
+    uint32      magicNumber;
+    uint32      version;
+    uint32      flags;
+    uint64      capacity;
+    uint64      grainSize;
+    uint64      descriptorOffset;
+    uint64      descriptorSize;
+    uint32      numGTEsPerGT;
+    uint64      rgdOffset;
+    uint64      gdOffset;
+    uint64      overHead;
+    uint8       uncleanShutdown;
+    char        singleEndLineChar;
+    char        nonEndLineChar;
+    char        doubleEndLineChar1;
+    char        doubleEndLineChar2;
+    uint16      compressAlgorithm;
+    char        pad[433];
+} SparseExtentHeader;
 
 typedef struct {
-    char    magic[4];                           // Magic "COWD" LE
-    uint32  version;                            // Version
-    uint32  flags;                              // Flags
-    uint32  capacity;                           // The maximum data number of sectors (capacity)
-    uint32  grain_size;                         // The grain number of sectors
-    uint32  primary_grain_directory_offset;     // The primary grain directory sector number
-    uint32  num_grain_directory_entries;        // The number of grain table entries
-    uint32  next_free_grain;                    // The next free grain
-
-    //uint32  num_cylinders;                      // The number of cylinders
-    //uint32  num_heads;                          // The number of heads
-    //uint32  num_sectors;                        // The number of sectors
-
-    //char    parent_filename[1024];              // The parent filename
-    //uint32  parent_generation;                  // The parent generation
-
-    //uint32  generation;                         // The generation
-    //char    name[60];                           // The name
-    //char    description[512];                   // The description
-    //uint32  saved_generation;                   // The saved generation
-    //uint64  reserved;                           // Reserved
-    //uint8   is_dirty;                           // Value to indicate the COWD was cleanly closed
-    //char    padding[396];                       // Padding
-} COWDSparseExtentHeader;
+    uint64      lba;
+    uint32      cmpSize;
+} SparseGrainLBAHeader;
 
 typedef struct {
-    uint64  magic;
-    uint64  version;
-    uint64  capacity;
-    uint64  grain_size;
-    uint64  grain_table_size;
-    uint64  flags;
-    uint64  reserved1;
-    uint64  reserved2;
-    uint64  reserved3;
-    uint64  reserved4;
-    uint64  volatile_header_offset;
-    uint64  volatile_header_size;
-    uint64  journal_header_offset;
-    uint64  journal_header_size;
-    uint64  journal_offset;
-    uint64  journal_size;
-    uint64  grain_directory_offset;
-    uint64  grain_directory_size;
-    uint64  grain_tables_offset;
-    uint64  grain_tables_size;
-    uint64  free_bitmap_offset;
-    uint64  free_bitmap_size;
-    uint64  backmap_offset;
-    uint64  backmap_size;
-    uint64  grains_offset;
-    uint64  grains_size;
-    uint8   pad[304];
-} VMDKSESparseConstHeader;
+    uint64      lba;
+    uint32      cmpSize;
+    uint32      type;
+} SparseSpecialLBAHeader;
 
 typedef struct {
-    uint64  magic;
-    uint64  free_gt_number;
-    uint64  next_txn_seq_number;
-    uint64  replay_journal;
-    uint8   pad[480];
-} VMDKSESparseVolatileHeader;
+    uint64      numSectors;
+    uint32      size;
+    uint32      type;
+    char        pad[496];
+    char        metadata[0];
+} SparseMetaDataMarker;
 
-#define SPARSE_MAGICNUMBER                  0x564D444B
+#define SPARSE_MAGICNUMBER                  0x564d444b  /* VMDK */
 #define SPARSE_VERSION_INCOMPAT_FLAGS       3
 #define SPARSE_GTE_EMPTY                    0x00000000
 #define SPARSE_GD_AT_END                    0xFFFFFFFFFFFFFFFF
@@ -107,6 +62,86 @@ typedef struct {
 #define SPARSE_COMPRESSALGORITHM_NONE       0x0000
 #define SPARSE_COMPRESSALGORITHM_DEFLATE    0x0001
 
+#define GRAIN_MARKER_EOS                    0
+#define GRAIN_MARKER_GRAIN_TABLE            1
+#define GRAIN_MARKER_GRAIN_DIRECTORY        2
+#define GRAIN_MARKER_FOOTER                 3
+#define GRAIN_MARKER_PROGRESS               4
+
+#define COWDISK_MAX_PARENT_FILELEN          1024
+#define COWDISK_MAX_NAME_LEN                60
+#define COWDISK_MAX_DESC_LEN                512
+
+typedef struct COWDisk_Header {
+    uint32      magicNumber;
+    uint32      version;
+    uint32      flags;
+    uint32      numSectors;
+    uint32      grainSize;
+    uint32      gdOffset;
+    uint32      numGDEntries;
+    uint32      freeSector;
+    union {
+        struct {
+            uint32  cylinders;
+            uint32  heads;
+            uint32  sectors;
+        } root;
+        struct {
+            char    parentFileName[COWDISK_MAX_PARENT_FILELEN];
+            uint32  parentGeneration;
+        } child;
+    } u;
+    uint32      generation;
+    char        name[COWDISK_MAX_NAME_LEN];
+    char        description[COWDISK_MAX_DESC_LEN];
+    uint32      savedGeneration;
+    char        reserved[8];
+    uint32      uncleanShutdown;
+    char        padding[396];
+} COWDisk_Header;
+
+#define COWDISK_MAGIC                       0x44574f43  /* COWD */
+#define COWDISK_ROOT                        0x01
+#define COWDISK_CHECKCAPABLE                0x02
+#define COWDISK_INCONSISTENT                0x04
+
+// Confusingly, these seem to be called extents too
+typedef struct SESparseExtent {
+    uint64      offset;
+    uint64      size;
+} SESparseExtent;
+
+typedef struct {
+    uint64      constMagic;
+    uint64      version;
+    uint64      capacity;
+    uint64      grainSize;
+    uint64      grainTableSize;
+    uint64      flags;
+    uint64      reserved1;
+    uint64      reserved2;
+    uint64      reserved3;
+    uint64      reserved4;
+    SESparseExtent  volatileHeader;
+    SESparseExtent  journalHeader;
+    SESparseExtent  journal;
+    SESparseExtent  grainDirectory;
+    SESparseExtent  grainTables;
+    SESparseExtent  freeBitmap;
+    SESparseExtent  backMap;
+    SESparseExtent  grain;
+    char        pad[304];
+} SESparseConstHeader;
+
+typedef struct {
+    uint64      volatileMagic;
+    uint64      freeGTNumber;
+    uint64      nextTxnSeqNumber;
+    uint64      replayJournal;
+    char        pad[480];
+} SESparseVolatileHeader;
+
 #define SESPARSE_CONST_HEADER_MAGIC         0x00000000CAFEBABE
 #define SESPARSE_VOLATILE_HEADER_MAGIC      0x00000000CAFEBABE
 
@@ -115,30 +150,11 @@ typedef struct {
 #define SESPARSE_GRAIN_TYPE_FALLTHROUGH     0x1000000000000000
 #define SESPARSE_GRAIN_TYPE_ZERO            0x2000000000000000
 #define SESPARSE_GRAIN_TYPE_ALLOCATED       0x3000000000000000
-
-typedef struct {
-    uint64  lba;
-    uint32  cmp_size;
-} SparseGrainLBAHeaderOnDisk;
-
-typedef struct {
-    uint64  lba;
-    uint32  cmp_size;
-    uint32  type;
-} SparseSpecialLBAHeaderOnDisk;
-
-#define GRAIN_MARKER_EOS                0
-#define GRAIN_MARKER_GRAIN_TABLE        1
-#define GRAIN_MARKER_GRAIN_DIRECTORY    2
-#define GRAIN_MARKER_FOOTER             3
-#define GRAIN_MARKER_PROGRESS           4
 """
 
 c_vmdk = cstruct().load(vmdk_def)
 
-SECTOR_SIZE = 512
-
-COWD_MAGIC = b"COWD"
-VMDK_MAGIC = b"KDMV"
+SPARSE_MAGIC = c_vmdk.uint32(c_vmdk.SPARSE_MAGICNUMBER).dumps()
+COWD_MAGIC = c_vmdk.uint32(c_vmdk.COWDISK_MAGIC).dumps()
 # Technically a 8 byte header, but it's little endian so everything after the first 4 bytes is 0
-SESPARSE_MAGIC = struct.pack("<I", c_vmdk.SESPARSE_CONST_HEADER_MAGIC)
+SESPARSE_MAGIC = c_vmdk.uint32(c_vmdk.SESPARSE_CONST_HEADER_MAGIC).dumps()
