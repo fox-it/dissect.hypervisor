@@ -533,10 +533,12 @@ def open_parent(path: Path, filename_hint: str) -> VMDK:
     try:
         filename_hint = filename_hint.replace("\\", "/")
         hint_path, _, filename = filename_hint.rpartition("/")
-        filepath = path.joinpath(filename)
+        filepath = path.joinpath(filename_hint)
         if not filepath.exists():
-            _, _, hint_path_name = hint_path.rpartition("/")
-            filepath = path.parent.joinpath(hint_path_name).joinpath(filename)
+            filepath = path.joinpath(filename)
+            if not filepath.exists():
+                _, _, hint_path_name = hint_path.rpartition("/")
+                filepath = path.parent.joinpath(hint_path_name).joinpath(filename)
         vmdk = VMDK(filepath)
     except Exception as err:
         raise IOError(f"Failed to open parent disk with hint {filename_hint} from path {path}: {err}")
