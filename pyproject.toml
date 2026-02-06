@@ -54,6 +54,7 @@ test = [
 lint = [
     "ruff==0.13.1",
     "vermin",
+    "typing_extensions",
 ]
 build = [
     "build",
