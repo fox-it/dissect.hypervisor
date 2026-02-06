@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import gzip
+from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
 from dissect.hypervisor.disk.c_vmdk import c_vmdk
-from dissect.hypervisor.disk.vmdk import VMDK, DiskDescriptor, ExtentDescriptor
+from dissect.hypervisor.disk.vmdk import VMDK, DiskDescriptor, ExtentDescriptor, open_parent
 from tests._util import absolute_path
 
 
@@ -203,3 +205,40 @@ def test_vmdk_extent_description(extent_description: str, expected_extents: list
 
     descriptor = DiskDescriptor.parse(extent_description)
     assert descriptor.extents == expected_extents
+
+
+def test_open_parent_all_cases(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test open_parent handles absolute and relative filename_hint paths."""
+
+    # Mock Path.exists to simulate file existence
+    def mock_exists(path: Path) -> bool:
+        return str(path) in {
+            "/a/b/c/d.vmdk",  # Case: absolute path
+            "base/relative/hint.vmdk",  # Case: full relative path
+            "base/hint.vmdk",  # Case: basename in same dir
+            "../sibling/hint.vmdk",  # Case: fallback to sibling
+        }
+
+    with monkeypatch.context() as m:
+        m.setattr("pathlib.Path.exists", mock_exists)
+
+        # Mock VMDK to avoid real file I/O
+        mock_vmdk = MagicMock()
+        m.setattr("dissect.hypervisor.disk.vmdk.VMDK", lambda path: mock_vmdk)
+        mock_vmdk.path = "mocked-path"
+
+        # Case: Absolute path — should use /a/b/c/d.vmdk directly
+        vmdk = open_parent(Path("base"), "/a/b/c/d.vmdk")
+        assert str(vmdk.path) == "mocked-path"
+
+        # Case: Full relative path — try base/relative/hint.vmdk
+        vmdk = open_parent(Path("base"), "relative/hint.vmdk")
+        assert str(vmdk.path) == "mocked-path"
+
+        # Case: Basename only — fall back to base/hint.vmdk
+        vmdk = open_parent(Path("base"), "hint.vmdk")
+        assert str(vmdk.path) == "mocked-path"
+
+        # Case: Fallback to sibling — try ../sibling/hint.vmdk
+        vmdk = open_parent(Path("base"), "sibling/hint.vmdk")
+        assert str(vmdk.path) == "mocked-path"
