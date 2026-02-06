@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from dissect.hypervisor.disk.c_vdi import c_vdi
 from dissect.hypervisor.disk.vdi import VDI
-from tests.conftest import absolute_path
+from tests._util import absolute_path
 
 
 def mock_open_gz(self: Path, *args, **kwargs) -> BinaryIO:
