@@ -7,8 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from dissect.hypervisor.disk.c_vmdk import c_vmdk
-from dissect.hypervisor.disk.vmdk import VMDK, DiskDescriptor, ExtentDescriptor, SESparseExtent, open_parent
+from dissect.hypervisor.disk.vmdk import VMDK, DiskDescriptor, ExtentDescriptor, open_parent
 from tests._util import absolute_path
 
 
@@ -24,7 +23,10 @@ def mock_open_gz(self: Path, *args, **kwargs) -> BinaryIO:
         pytest.param("_data/disk/vmdk/split-flat.vmdk.gz", id="split-flat"),
         pytest.param("_data/disk/vmdk/split-sparse.vmdk.gz", id="split-sparse"),
         pytest.param("_data/disk/vmdk/stream.vmdk.gz", id="stream"),
+        # COWD test data was manually created
         pytest.param("_data/disk/vmdk/cowd.vmdk.gz", id="cowd"),
+        # SESparse test data was manually created
+        pytest.param("_data/disk/vmdk/sesparse.vmdk.gz", id="sesparse"),
     ],
 )
 def test_vmdk(path: str) -> None:
@@ -42,25 +44,6 @@ def test_vmdk(path: str) -> None:
             assert stream.read(4096) == expected, f"Mismatch at offset {i * 4096:#x}"
 
         assert stream.read() == b""
-
-
-def test_vmdk_sesparse() -> None:
-    # TODO: Recreate test data with new test pattern
-    with gzip.open(absolute_path("_data/disk/vmdk/sesparse.vmdk.gz"), "rb") as fh:
-        vmdk = VMDK(fh)
-
-        extent = vmdk.extents[0]
-        assert isinstance(extent, SESparseExtent)
-
-        assert extent.header.constMagic == c_vmdk.SESPARSE_CONST_HEADER_MAGIC
-        assert extent.header.version == 0x200000001
-
-        assert extent._num_gte_per_gt == 0x1000
-        assert len(extent._gd) == 0x20000
-        assert extent._gd[0] == 0x1000000000000000
-
-        stream = vmdk.open()
-        assert stream.read(0x1000000) == b"a" * 0x1000000
 
 
 @pytest.mark.parametrize(
