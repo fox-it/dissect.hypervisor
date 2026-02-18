@@ -500,8 +500,6 @@ class SESparseExtent(SparseExtent):
 class COWDisk(SparseExtent):
     """COW disk extent implementation.
 
-    TODO: Regenerate test data and fix implementation.
-
     Args:
         fh: File-like object for the extent.
         path: Optional path for the extent.
@@ -521,20 +519,20 @@ class COWDisk(SparseExtent):
         return self.header.grainSize * SECTOR_SIZE
 
     @cached_property
-    def _gte_type(self) -> c_vmdk.uint32 | c_vmdk.uint64:
-        return c_vmdk.uint32
-
-    @cached_property
     def _num_gte_per_gt(self) -> int:
         return 4096
 
     @cached_property
-    def _gd_size(self) -> int:
-        return self.header.numGDEntries
+    def _gd(self) -> list[int]:
+        self.fh.seek(self.header.gdOffset * SECTOR_SIZE)
+        return c_vmdk.uint32[self.header.numGDEntries](self.fh)
 
-    @cached_property
-    def _gd_offset(self) -> int:
-        return self.header.gdOffset * SECTOR_SIZE
+    def _gt(self, idx: int) -> list[int] | None:
+        if (offset := self._gd[idx]) == 0:
+            return None
+
+        self.fh.seek(offset * SECTOR_SIZE)
+        return c_vmdk.uint32[self._num_gte_per_gt](self.fh)
 
 
 RE_EXTENT_DESCRIPTOR = re.compile(

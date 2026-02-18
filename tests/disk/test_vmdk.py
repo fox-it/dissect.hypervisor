@@ -24,6 +24,7 @@ def mock_open_gz(self: Path, *args, **kwargs) -> BinaryIO:
         pytest.param("_data/disk/vmdk/split-flat.vmdk.gz", id="split-flat"),
         pytest.param("_data/disk/vmdk/split-sparse.vmdk.gz", id="split-sparse"),
         pytest.param("_data/disk/vmdk/stream.vmdk.gz", id="stream"),
+        pytest.param("_data/disk/vmdk/cowd.vmdk.gz", id="cowd"),
     ],
 )
 def test_vmdk(path: str) -> None:
