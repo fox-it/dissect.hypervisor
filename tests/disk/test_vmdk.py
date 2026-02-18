@@ -254,3 +254,19 @@ def test_open_parent_all_cases(monkeypatch: pytest.MonkeyPatch) -> None:
         # Case: Fallback to sibling — try ../sibling/hint.vmdk
         vmdk = open_parent(Path("base"), "sibling/hint.vmdk")
         assert str(vmdk.path) == "mocked-path"
+
+
+def test_native_parent_hint(tmp_path: Path) -> None:
+    """Test that we correctly handle the ddb.nativeParentHint attribute for both descriptor and extent descriptors."""
+
+    descriptor = b"""# Disk DescriptorFile
+parentCID=ffffffff
+
+ddb.nativeParentCID = "8c5389b7"
+ddb.nativeParentHint = "disk-name.vmdk"
+"""
+    tmp_path.joinpath("descriptor.vmdk").write_bytes(descriptor)
+
+    with patch("dissect.hypervisor.disk.vmdk.open_parent") as mock_open_parent:
+        VMDK(tmp_path.joinpath("descriptor.vmdk"))
+        mock_open_parent.assert_called_with(tmp_path, "disk-name.vmdk")

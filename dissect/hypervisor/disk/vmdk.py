@@ -77,8 +77,11 @@ class VMDK:
                 fh.close()
 
             # The descriptor file determines the parent
-            if self.parent is None and self.descriptor.attributes["parentCID"] != "ffffffff":
-                self.parent = open_parent(path.parent, self.descriptor.attributes["parentFileNameHint"])
+            if self.parent is None:
+                if self.descriptor.attributes["parentCID"] != "ffffffff":
+                    self.parent = open_parent(path.parent, self.descriptor.attributes["parentFileNameHint"])
+                elif self.descriptor.attributes.get("ddb.nativeParentCID", "ffffffff") != "ffffffff":
+                    self.parent = open_parent(path.parent, self.descriptor.attributes["ddb.nativeParentHint"])
 
             # Open all extents listed in the descriptor
             for extent_descriptor in self.descriptor.extents:
@@ -91,8 +94,11 @@ class VMDK:
             extent = Extent.from_fh(fh, path)
 
             # The single file VMDK may have a parent in the embedded descriptor
-            if extent.descriptor and extent.descriptor.attributes["parentCID"] != "ffffffff":
-                self.parent = open_parent(path.parent, extent.descriptor.attributes["parentFileNameHint"])
+            if extent.descriptor:
+                if extent.descriptor.attributes["parentCID"] != "ffffffff":
+                    self.parent = open_parent(path.parent, extent.descriptor.attributes["parentFileNameHint"])
+                elif extent.descriptor.attributes.get("ddb.nativeParentCID", "ffffffff") != "ffffffff":
+                    self.parent = open_parent(path.parent, extent.descriptor.attributes["ddb.nativeParentHint"])
 
             self.extents.append(extent)
 
