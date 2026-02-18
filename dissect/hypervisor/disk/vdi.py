@@ -18,15 +18,20 @@ if TYPE_CHECKING:
 class VDI:
     """VirtualBox Virtual Disk Image (VDI) implementation.
 
-    If provided with file-like objects, the caller is responsible for closing them.
-    When provided with paths, the VDI class will manage the file handles.
+    Use :method:`open` to get a stream for reading from the VDI file. The stream will handle reading
+    from the parent disk if necessary (and provided).
+
+    If provided with a file-like object, the caller is responsible for closing it.
+    When provided with a path, the VDI class will manage the file handle.
+
+    If providing a parent file-like object, the caller is responsible for the lifecycle of that object.
 
     Args:
         fh: File-like object or path of the VDI file.
-        parent: Optional file-like object or path for the parent disk (for differencing disks).
+        parent: Optional file-like object for the parent disk (for differencing disks).
     """
 
-    def __init__(self, fh: BinaryIO | Path, parent: BinaryIO | Path | None = None):
+    def __init__(self, fh: BinaryIO | Path, parent: BinaryIO | None = None):
         if isinstance(fh, Path):
             self.path = fh
             self.fh = self.path.open("rb")
@@ -34,12 +39,7 @@ class VDI:
             self.path = None
             self.fh = fh
 
-        if isinstance(parent, Path):
-            self.parent_path = parent
-            self.parent = self.parent_path.open("rb")
-        else:
-            self.parent_path = None
-            self.parent = parent
+        self.parent = parent
 
         self.fh.seek(0)
         self.preheader = c_vdi.VDIPREHEADER(self.fh)
@@ -101,9 +101,6 @@ class VDI:
         """Close the VDI file handle."""
         if self.path is not None:
             self.fh.close()
-
-        if self.parent_path is not None and self.parent is not None:
-            self.parent.close()
 
 
 class VDIStream(AlignedStream):
