@@ -407,7 +407,7 @@ RE_EXTENT_DESCRIPTOR = re.compile(
     ^
     (?P<access_mode>RW|RDONLY|NOACCESS)\s
     (?P<sectors>\d+)\s
-    (?P<type>SPARSE|ZERO|FLAT|VMFS|VMFSSPARSE|VMFSRDM|VMFSRAW)
+    (?P<type>SESPARSE|SPARSE|ZERO|FLAT|VMFS|VMFSSPARSE|VMFSRDM|VMFSRAW)
     (\s(?P<filename>\".+\"))?
     (\s(?P<start_sector>\d+))?
     (\s(?P<partition_uuid>\S+))?
@@ -535,8 +535,10 @@ def open_parent(path: Path, filename_hint: str) -> VMDK:
         hint_path, _, filename = filename_hint.rpartition("/")
         filepath = path.joinpath(filename)
         if not filepath.exists():
-            _, _, hint_path_name = hint_path.rpartition("/")
-            filepath = path.parent.joinpath(hint_path_name).joinpath(filename)
+            filepath = path.joinpath(filename_hint)
+            if not filepath.exists():
+                _, _, hint_path_name = hint_path.rpartition("/")
+                filepath = path.parent.joinpath(hint_path_name).joinpath(filename)
         vmdk = VMDK(filepath)
     except Exception as err:
         raise IOError(f"Failed to open parent disk with hint {filename_hint} from path {path}: {err}")

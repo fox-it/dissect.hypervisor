@@ -5,9 +5,27 @@ from pathlib import Path
 from typing import BinaryIO
 from unittest.mock import patch
 
+import pytest
+
 from dissect.hypervisor.disk.hdd import HDD
+from tests._util import absolute_path
 
 Path_open = Path.open
+
+
+@pytest.fixture
+def plain_hdd() -> Path:
+    return absolute_path("_data/disk/hdd/plain.hdd")
+
+
+@pytest.fixture
+def expanding_hdd() -> Path:
+    return absolute_path("_data/disk/hdd/expanding.hdd")
+
+
+@pytest.fixture
+def split_hdd() -> Path:
+    return absolute_path("_data/disk/hdd/split.hdd")
 
 
 def mock_open_gz(self: Path, *args, **kwargs) -> BinaryIO:
