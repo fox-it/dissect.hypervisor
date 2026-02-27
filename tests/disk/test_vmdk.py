@@ -2,208 +2,204 @@ from __future__ import annotations
 
 import gzip
 from pathlib import Path
-from unittest.mock import MagicMock
+from typing import BinaryIO
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from dissect.hypervisor.disk.c_vmdk import c_vmdk
 from dissect.hypervisor.disk.vmdk import VMDK, DiskDescriptor, ExtentDescriptor, open_parent
 from tests._util import absolute_path
 
 
-def test_vmdk_sesparse() -> None:
-    with gzip.open(absolute_path("_data/disk/vmdk/sesparse.vmdk.gz"), "rb") as fh:
-        vmdk = VMDK(fh)
-
-        disk = vmdk.disks[0]
-
-        assert disk.is_sesparse
-        assert disk._grain_directory_size == 0x20000
-        assert disk._grain_table_size == 0x1000
-        assert disk._grain_entry_type == c_vmdk.uint64
-        assert disk._grain_directory[0] == 0x1000000000000000
-
-        header = disk.header
-        assert header.magic == c_vmdk.SESPARSE_CONST_HEADER_MAGIC
-        assert header.version == 0x200000001
-
-        assert vmdk.read(0x1000000) == b"a" * 0x1000000
+def mock_open_gz(self: Path, *args, **kwargs) -> BinaryIO:
+    return gzip.open(self if self.suffix.lower() == ".gz" else self.with_suffix(self.suffix + ".gz"))
 
 
 @pytest.mark.parametrize(
-    ("extent_description", "expected_extents"),
+    ("path"),
     [
-        (
+        pytest.param("_data/disk/vmdk/flat.vmdk.gz", id="flat"),
+        pytest.param("_data/disk/vmdk/sparse.vmdk.gz", id="sparse"),
+        pytest.param("_data/disk/vmdk/split-flat.vmdk.gz", id="split-flat"),
+        pytest.param("_data/disk/vmdk/split-sparse.vmdk.gz", id="split-sparse"),
+        pytest.param("_data/disk/vmdk/stream.vmdk.gz", id="stream"),
+        # COWD test data was manually created
+        pytest.param("_data/disk/vmdk/cowd.vmdk.gz", id="cowd"),
+        # SESparse test data was manually created
+        pytest.param("_data/disk/vmdk/sesparse.vmdk.gz", id="sesparse"),
+    ],
+)
+def test_vmdk(path: str) -> None:
+    """Test basic VMDK reading."""
+    with patch.object(Path, "open", mock_open_gz):
+        vmdk = VMDK(absolute_path(path))
+
+        assert vmdk.size == 10 * 1024 * 1024
+
+        stream = vmdk.open()
+        assert stream.read(1 * 1024 * 1024) == bytes([0] * (1 * 1024 * 1024))
+
+        for i in range((1 * 1024 * 1024) // 4096, stream.size // 4096):
+            expected = bytes([i % 256] * 4096)
+            assert stream.read(4096) == expected, f"Mismatch at offset {i * 4096:#x}"
+
+        assert stream.read() == b""
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected_extents"),
+    [
+        pytest.param(
             'RW 123456789 SPARSE "disk.vmdk"',
             [
                 ExtentDescriptor(
-                    raw='RW 123456789 SPARSE "disk.vmdk"',
-                    access_mode="RW",
-                    sectors=123456789,
+                    access="RW",
+                    size=123456789,
                     type="SPARSE",
-                    filename='"disk.vmdk"',
-                    start_sector=None,
-                    partition_uuid=None,
-                    device_identifier=None,
+                    filename="disk.vmdk",
                 ),
             ],
+            id="sparse",
         ),
-        (
+        pytest.param(
             'RW 123456789 FLAT "disk-flat.vmdk" 0',
             [
                 ExtentDescriptor(
-                    raw='RW 123456789 FLAT "disk-flat.vmdk" 0',
-                    access_mode="RW",
-                    sectors=123456789,
+                    access="RW",
+                    size=123456789,
                     type="FLAT",
-                    filename='"disk-flat.vmdk"',
-                    start_sector=0,
-                    partition_uuid=None,
-                    device_identifier=None,
+                    filename="disk-flat.vmdk",
+                    offset=0,
                 )
             ],
+            id="flat",
         ),
-        (
+        pytest.param(
             "RDONLY 0 ZERO",
             [
                 ExtentDescriptor(
-                    raw="RDONLY 0 ZERO",
-                    access_mode="RDONLY",
-                    sectors=0,
+                    access="RDONLY",
+                    size=0,
                     type="ZERO",
                 ),
             ],
+            id="zero",
         ),
-        (
+        pytest.param(
             'NOACCESS 123456789 SPARSE "disk-sparse.vmdk" 123 partition-uuid device-id',
             [
                 ExtentDescriptor(
-                    raw='NOACCESS 123456789 SPARSE "disk-sparse.vmdk" 123 partition-uuid device-id',
-                    access_mode="NOACCESS",
-                    sectors=123456789,
+                    access="NOACCESS",
+                    size=123456789,
                     type="SPARSE",
-                    filename='"disk-sparse.vmdk"',
-                    start_sector=123,
-                    partition_uuid="partition-uuid",
-                    device_identifier="device-id",
+                    filename="disk-sparse.vmdk",
+                    offset=123,
                 ),
             ],
+            id="sparse-ids",
         ),
-        ("RW 1234567890", []),
-        ('RDONLY "file.vmdk"', []),
-        ("NOACCESS", []),
-        (
+        pytest.param(
+            "RW 1234567890",
+            [],
+            id="bad-1",
+        ),
+        pytest.param(
+            'RDONLY "file.vmdk"',
+            [],
+            id="bad-2",
+        ),
+        pytest.param(
+            "NOACCESS",
+            [],
+            id="bad-3",
+        ),
+        pytest.param(
             'RW 1234567890 SPARSE "disk with spaces.vmdk"',
             [
                 ExtentDescriptor(
-                    raw='RW 1234567890 SPARSE "disk with spaces.vmdk"',
-                    access_mode="RW",
-                    sectors=1234567890,
+                    access="RW",
+                    size=1234567890,
                     type="SPARSE",
-                    filename='"disk with spaces.vmdk"',
-                    start_sector=None,
-                    partition_uuid=None,
-                    device_identifier=None,
+                    filename="disk with spaces.vmdk",
                 )
             ],
+            id="spaces-four-parts",
         ),
-        (
+        pytest.param(
             'RW 1234567890 SPARSE "disk with spaces.vmdk" 123',
             [
                 ExtentDescriptor(
-                    raw='RW 1234567890 SPARSE "disk with spaces.vmdk" 123',
-                    access_mode="RW",
-                    sectors=1234567890,
+                    access="RW",
+                    size=1234567890,
                     type="SPARSE",
-                    filename='"disk with spaces.vmdk"',
-                    start_sector=123,
-                    partition_uuid=None,
-                    device_identifier=None,
+                    filename="disk with spaces.vmdk",
+                    offset=123,
                 )
             ],
+            id="spaces-five-parts",
         ),
-        (
+        pytest.param(
             'RW 1234567890 SPARSE "disk with spaces.vmdk" 123 part-uuid',
             [
                 ExtentDescriptor(
-                    raw='RW 1234567890 SPARSE "disk with spaces.vmdk" 123 part-uuid',
-                    access_mode="RW",
-                    sectors=1234567890,
+                    access="RW",
+                    size=1234567890,
                     type="SPARSE",
-                    filename='"disk with spaces.vmdk"',
-                    start_sector=123,
-                    partition_uuid="part-uuid",
-                    device_identifier=None,
+                    filename="disk with spaces.vmdk",
+                    offset=123,
                 )
             ],
+            id="spaces-six-parts",
         ),
-        (
+        pytest.param(
             'RW 1234567890 SPARSE "disk with spaces.vmdk" 123 part-uuid device-id',
             [
                 ExtentDescriptor(
-                    raw='RW 1234567890 SPARSE "disk with spaces.vmdk" 123 part-uuid device-id',
-                    access_mode="RW",
-                    sectors=1234567890,
+                    access="RW",
+                    size=1234567890,
                     type="SPARSE",
-                    filename='"disk with spaces.vmdk"',
-                    start_sector=123,
-                    partition_uuid="part-uuid",
-                    device_identifier="device-id",
+                    filename="disk with spaces.vmdk",
+                    offset=123,
                 )
             ],
+            id="spaces-seven-parts",
         ),
-        (
+        pytest.param(
             r'RW 16777216 SPARSE "this is an example "\' diskëäô:)\\\'`\foo.vmdk" 123',
             [
                 ExtentDescriptor(
-                    raw=r'RW 16777216 SPARSE "this is an example "\' diskëäô:)\\\'`\foo.vmdk" 123',
-                    access_mode="RW",
-                    sectors=16777216,
+                    access="RW",
+                    size=16777216,
                     type="SPARSE",
-                    filename=r'"this is an example "\' diskëäô:)\\\'`\foo.vmdk"',
-                    start_sector=123,
-                    partition_uuid=None,
-                    device_identifier=None,
+                    filename=r'this is an example "\' diskëäô:)\\\'`\foo.vmdk',
+                    offset=123,
                 )
             ],
+            id="specials-five-parts",
         ),
-        (
+        pytest.param(
             r'RW 13371337 SPARSE "🦊 🦊 🦊.vmdk"',
             [
                 ExtentDescriptor(
-                    raw=r'RW 13371337 SPARSE "🦊 🦊 🦊.vmdk"',
-                    access_mode="RW",
-                    sectors=13371337,
+                    access="RW",
+                    size=13371337,
                     type="SPARSE",
-                    filename='"🦊 🦊 🦊.vmdk"',
+                    filename="🦊 🦊 🦊.vmdk",
                 )
             ],
+            id="emoji-four-parts",
         ),
     ],
-    ids=(
-        "sparse",
-        "flat",
-        "zero",
-        "sparse-ids",
-        "bad-1",
-        "bad-2",
-        "bad-3",
-        "spaces-four-parts",
-        "spaces-five-parts",
-        "spaces-six-parts",
-        "spaces-seven-parts",
-        "specials-five-parts",
-        "emoji-four-parts",
-    ),
 )
-def test_vmdk_extent_description(extent_description: str, expected_extents: list[ExtentDescriptor]) -> None:
+def test_vmdk_extent_description(raw: str, expected_extents: list[ExtentDescriptor]) -> None:
     """test if we correctly parse VMDK sparse and flat extent descriptions.
 
     Resources:
         - https://github.com/libyal/libvmdk/blob/main/documentation/VMWare%20Virtual%20Disk%20Format%20(VMDK).asciidoc#22-extent-descriptions
+        - https://web.archive.org/web/20120302211605/http://www.vmware.com/support/developer/vddk/vmdk_50_technote.pdf
     """
 
-    descriptor = DiskDescriptor.parse(extent_description)
+    descriptor = DiskDescriptor(raw)
     assert descriptor.extents == expected_extents
 
 
@@ -242,3 +238,19 @@ def test_open_parent_all_cases(monkeypatch: pytest.MonkeyPatch) -> None:
         # Case: Fallback to sibling — try ../sibling/hint.vmdk
         vmdk = open_parent(Path("base"), "sibling/hint.vmdk")
         assert str(vmdk.path) == "mocked-path"
+
+
+def test_native_parent_hint(tmp_path: Path) -> None:
+    """Test that we correctly handle the ddb.nativeParentHint attribute for both descriptor and extent descriptors."""
+
+    descriptor = b"""# Disk DescriptorFile
+parentCID=ffffffff
+
+ddb.nativeParentCID = "8c5389b7"
+ddb.nativeParentHint = "disk-name.vmdk"
+"""
+    tmp_path.joinpath("descriptor.vmdk").write_bytes(descriptor)
+
+    with patch("dissect.hypervisor.disk.vmdk.open_parent") as mock_open_parent:
+        VMDK(tmp_path.joinpath("descriptor.vmdk"))
+        mock_open_parent.assert_called_with(tmp_path, "disk-name.vmdk")
