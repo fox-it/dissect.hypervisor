@@ -62,12 +62,12 @@ class VisorTarFile(tarfile.TarFile):
             raise tarfile.TarError("visor currently only supports read mode")
 
         try:
-            from gzip import GzipFile  # noqa: PLC0415
+            from gzip import GzipFile
         except ImportError:
             raise tarfile.CompressionError("gzip module is not available") from None
 
         try:
-            from lzma import LZMAError, LZMAFile  # noqa: PLC0415
+            from lzma import LZMAError, LZMAFile
         except ImportError:
             raise tarfile.CompressionError("lzma module is not available") from None
 
