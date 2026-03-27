@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import tarfile
 
 from dissect.hypervisor.util import vmtar

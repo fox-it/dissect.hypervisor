@@ -101,7 +101,7 @@ class VMX:
         self.attr.update(**_parse_dictionary(decrypted.decode()))
 
     def disks(self) -> list[str]:
-        """Return a list of paths to disk files"""
+        """Return a list of paths to disk files."""
         dev_classes = ("scsi", "sata", "ide", "nvme")
         devices = {}
 
@@ -179,7 +179,6 @@ class KeySafe:
     @classmethod
     def from_text(cls, text: str) -> KeySafe:
         """Parse a ``KeySafe`` from a string."""
-
         # Key safes are a list of key locators. It's a key locator string with a specific prefix
         identifier, _, remainder = text.partition("/")
         if identifier != "vmware:key":
@@ -262,7 +261,6 @@ def _parse_key_locator(locator_string: str) -> Pair | Phrase | list[Pair | Phras
 
     Interally called ``KeyLocator``.
     """
-
     identifier, _, remainder = locator_string.partition("/")
 
     if identifier == "list":
@@ -303,7 +301,6 @@ def _split_list(value: str) -> list[str]:
     Lists are wrapped by braces and separated by comma. They can contain nested lists/pairs,
     so we need to separate at the correct nest level.
     """
-
     if not (match := re.match(r"\((.+)\)", value)):
         raise ValueError("Invalid list string")
 
@@ -337,7 +334,6 @@ def _parse_crypto_dict(dict_string: str) -> dict[str, str]:
 
     Internally called ``CryptoDict``.
     """
-
     crypto_dict = {}
     for part in dict_string.split(":"):
         key, _, value = part.partition("=")
@@ -351,7 +347,6 @@ def _decrypt_hmac(key: bytes, data: bytes, digest: str) -> bytes:
     First 16 bytes of the ciphertext are the IV and the last N bytes are the HMAC digest.
     The cleartext is padded using PKCS#7.
     """
-
     digest, digest_size = HMAC_MAP[digest]
 
     iv, encrypted, mac = data[:16], data[16:-digest_size], data[-digest_size:]
@@ -374,7 +369,6 @@ def _create_cipher(key: bytes, iv: bytes) -> AES.CbcMode:
 
     Dynamic based on the available crypto module.
     """
-
     if HAS_PYSTANDALONE:
         if len(key) == 32:
             cipher = "aes-256-cbc"

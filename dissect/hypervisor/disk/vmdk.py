@@ -29,9 +29,7 @@ log.setLevel(os.getenv("DISSECT_LOG_VMDK", "CRITICAL"))
 
 class VMDK(AlignedStream):
     def __init__(self, fh: BinaryIO | Path | str | list[BinaryIO | Path | str]):
-        """
-        Input can be a file handle to a Disk Descriptor file or a list of file handles to multiple VMDK files.
-        """
+        """Input can be a file handle to a Disk Descriptor file or a list of file handles to multiple VMDK files."""
         fhs = [fh] if not isinstance(fh, list) else fh
 
         self.disks = []
@@ -462,7 +460,6 @@ class DiskDescriptor:
         Resources:
             - https://github.com/libyal/libvmdk/blob/main/documentation/VMWare%20Virtual%20Disk%20Format%20(VMDK).asciidoc
         """
-
         descriptor_settings = {}
         extents: list[ExtentDescriptor] = []
         disk_db = {}

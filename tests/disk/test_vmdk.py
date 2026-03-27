@@ -197,12 +197,11 @@ def test_vmdk_sesparse() -> None:
     ),
 )
 def test_vmdk_extent_description(extent_description: str, expected_extents: list[ExtentDescriptor]) -> None:
-    """test if we correctly parse VMDK sparse and flat extent descriptions.
+    """Test if we correctly parse VMDK sparse and flat extent descriptions.
 
     Resources:
         - https://github.com/libyal/libvmdk/blob/main/documentation/VMWare%20Virtual%20Disk%20Format%20(VMDK).asciidoc#22-extent-descriptions
     """
-
     descriptor = DiskDescriptor.parse(extent_description)
     assert descriptor.extents == expected_extents
 
