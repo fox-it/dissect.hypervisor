@@ -120,8 +120,7 @@ class VisorTarFile(tarfile.TarFile):
         if fileobj is not None:
             fileobj.seek(0)
             if compressed:
-                # GzipFile/LZMAFile are not seekable, but TarFile requires seek/tell.
-                # Read the decompressed data into a BytesIO to make it seekable.
+                # Read the decompressed data into a BytesIO to make random reads faster
                 fileobj = BytesIO(fileobj.read())
 
         t = cls.taropen(name, mode, fileobj, **kwargs)
