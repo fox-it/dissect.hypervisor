@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 class VDI:
     """VirtualBox Virtual Disk Image (VDI) implementation.
 
-    Use :method:`open` to get a stream for reading from the VDI file. The stream will handle reading
+    Use :meth:`open` to get a stream for reading from the VDI file. The stream will handle reading
     from the parent disk if necessary (and provided).
 
     If provided with a file-like object, the caller is responsible for closing it.
