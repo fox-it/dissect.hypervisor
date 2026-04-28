@@ -27,7 +27,6 @@ autoapi_options = [
     "show-inheritance",
     "show-module-summary",
     "special-members",
-    "imported-members",
 ]
 autoapi_keep_files = True
 autoapi_template_dir = "_templates/autoapi"
@@ -36,3 +35,8 @@ autodoc_typehints = "signature"
 autodoc_member_order = "groupwise"
 
 autosectionlabel_prefix_document = True
+
+suppress_warnings = [
+    # https://github.com/readthedocs/sphinx-autoapi/issues/285
+    "autoapi.python_import_resolution",
+]
