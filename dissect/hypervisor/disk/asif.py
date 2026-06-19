@@ -255,12 +255,13 @@ class DataStream(AlignedStream):
     def _read(self, offset: int, length: int) -> bytes:
         result = []
         while length:
-            if (table := self.directory.table(offset // self.asif._size_per_table)) is None:
-                read_length = min(length, self.asif._size_per_table)
+            table_index, offset_in_table = divmod(offset, self.asif._size_per_table)
+            if (table := self.directory.table(table_index)) is None:
+                read_length = min(length, self.asif._size_per_table - offset_in_table)
                 result.append(b"\x00" * read_length)
             else:
                 # Calculate the relative chunk index within the table
-                relative_block_index = (offset // self.asif.block_size) - (table.virtual_offset // self.asif.block_size)
+                relative_block_index = offset_in_table // self.asif.block_size
                 relative_chunk_index = relative_block_index // self.asif._blocks_per_chunk
 
                 # Calculate the chunk group
@@ -268,14 +269,59 @@ class DataStream(AlignedStream):
                 # Each chunk group has a bitmap entry, so we need to account for that in the entry index
                 entry_index = relative_chunk_index + chunk_group
 
+                read_length = min(length, self.asif.chunk_size)
+
+                status = table.entries[entry_index] >> 62
                 chunk = table.entries[entry_index] & 0x7FFFFFFFFFFFFF
 
-                read_length = min(length, self.asif.chunk_size)
-                if chunk == 0:
+                if status in (0b00, 0b10) and chunk == 0:
+                    # uninitialized or unmapped
                     result.append(b"\x00" * read_length)
-                else:
+                elif status == 0b01:
+                    # fully initialized
                     self.asif.fh.seek(chunk * self.asif.chunk_size)
                     result.append(self.asif.fh.read(read_length))
+                elif status == 0b11:
+                    # has bitmap
+
+                    # Calculate which entry has the bitmap for this chunk group
+                    bitmap_entry_index = (
+                        chunk_group * (self.asif._num_chunks_per_group + 1) + self.asif._num_chunks_per_group
+                    )
+
+                    # Read the bitmap
+                    bitmap_chunk = table.entries[bitmap_entry_index] & 0x7FFFFFFFFFFFFF
+                    self.asif.fh.seek(bitmap_chunk * self.asif.chunk_size)
+                    bitmap = self.asif.fh.read(self.asif.chunk_size)
+
+                    # Calculate the offset of the chunk within the chunk group
+                    chunk_offset_in_group = relative_chunk_index % self.asif._num_chunks_per_group
+                    # Calculate the offset of the block within the chunk
+                    block_offset_in_chunk = relative_block_index % self.asif._blocks_per_chunk
+                    # Calculate the offset of the block within the bitmap
+                    block_offset_in_bitmap = chunk_offset_in_group * self.asif._blocks_per_chunk + block_offset_in_chunk
+
+                    for i in range(read_length // self.asif.block_size):
+                        # Bitmap entries are LSB first, with 2 bits per block
+                        block_index = block_offset_in_bitmap + i
+                        byte_index, bit_index = divmod(block_index, 4)
+                        bitmap_byte = bitmap[byte_index]
+                        block_status = (bitmap_byte >> (bit_index * 2)) & 0b11
+
+                        if block_status == 0b00:
+                            # uninitialized
+                            result.append(b"\x00" * self.asif.block_size)
+                        elif block_status == 0b01:
+                            # fully initialized
+                            self.asif.fh.seek((chunk * self.asif.chunk_size) + (i * self.asif.block_size))
+                            result.append(self.asif.fh.read(self.asif.block_size))
+                        elif block_status == 0b10:
+                            # unmapped
+                            result.append(b"\x00" * self.asif.block_size)
+                        elif block_status == 0b11:
+                            raise ValueError(f"Invalid bitmap entry {block_status:#b} at offset {offset:#x}")
+                else:
+                    raise ValueError(f"Unknown status {status:#x} at offset {offset:#x}")
 
             offset += read_length
             length -= read_length
