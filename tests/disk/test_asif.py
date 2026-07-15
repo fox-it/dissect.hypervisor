@@ -17,3 +17,8 @@ def test_asif() -> None:
         with asif.open() as stream:
             for i in range(100):
                 assert stream.read(1024 * 1024).strip(bytes([i])) == b"", f"Mismatch at offset {i * 1024 * 1024:#x}"
+
+        with asif.open(reserved=True) as stream:
+            assert asif.active_directory.table(1337) is None
+            stream.seek(1337 * asif._size_per_table)
+            assert stream.read(asif.chunk_size) == b"\x00" * asif.chunk_size
