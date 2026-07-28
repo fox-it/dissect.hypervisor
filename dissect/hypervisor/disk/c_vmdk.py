@@ -93,10 +93,10 @@ typedef struct {
 #define SPARSE_VERSION_INCOMPAT_FLAGS       3
 #define SPARSE_GTE_EMPTY                    0x00000000
 #define SPARSE_GD_AT_END                    0xFFFFFFFFFFFFFFFF
-#define SPARSE_SINGLE_END_LINE_CHAR         '\n'
+#define SPARSE_SINGLE_END_LINE_CHAR         '\\n'
 #define SPARSE_NON_END_LINE_CHAR            ' '
-#define SPARSE_DOUBLE_END_LINE_CHAR1        '\r'
-#define SPARSE_DOUBLE_END_LINE_CHAR2        '\n'
+#define SPARSE_DOUBLE_END_LINE_CHAR1        '\\r'
+#define SPARSE_DOUBLE_END_LINE_CHAR2        '\\n'
 #define SPARSEFLAG_COMPAT_FLAGS             0x0000FFFF
 #define SPARSEFLAG_VALID_NEWLINE_DETECTOR   1
 #define SPARSEFLAG_USE_REDUNDANT            2
