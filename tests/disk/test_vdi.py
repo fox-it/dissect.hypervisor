@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import gzip
+import struct
+from io import BytesIO
 from pathlib import Path
+from types import SimpleNamespace
 from typing import BinaryIO
 from unittest.mock import patch
 
 from dissect.hypervisor.disk.c_vdi import c_vdi
-from dissect.hypervisor.disk.vdi import VDI
+from dissect.hypervisor.disk.vdi import VDI, VDIStream
 from tests._util import absolute_path
 
 
@@ -32,6 +35,27 @@ def test_vdi() -> None:
             assert stream.read(4096) == expected, f"Mismatch at offset {i * 4096:#x}"
 
         assert stream.read() == b""
+
+
+def test_vdi_read_across_non_contiguous_blocks() -> None:
+    """Test a single read spanning non-contiguous VDI allocation-map blocks."""
+    block_size = 4
+    allocation_map = struct.pack("<ii", 1, 0)
+    fh = BytesIO(allocation_map + b"AAAABBBBCCCC")
+
+    vdi = SimpleNamespace(
+        fh=fh,
+        blocks_offset=0,
+        number_of_blocks=2,
+        block_size=block_size,
+        size=2 * block_size,
+        data_offset=len(allocation_map),
+        parent=None,
+    )
+
+    stream = VDIStream(vdi)
+
+    assert stream.read(vdi.size) == b"BBBBAAAA"
 
 
 def test_vdi_context_manager() -> None:
