@@ -54,7 +54,7 @@ class VMDK(AlignedStream):
             if magic == b"# Di" and len(fhs) == 1:
                 # Try reading the disk files from this descriptor
                 # Otherwise we assume that the other file handles are the appropriate disks
-                self.descriptor = DiskDescriptor.parse(fh.read().decode())
+                self.descriptor = DiskDescriptor.parse_bytes(fh.read())
 
                 if self.descriptor.attr["parentCID"] != "ffffffff":
                     self.parent = open_parent(path.parent, self.descriptor.attr["parentFileNameHint"])
@@ -175,7 +175,7 @@ class SparseDisk:
                 if self.header.descriptor_size > 0:
                     fh.seek(self.header.descriptor_offset * SECTOR_SIZE)
                     descriptor_buf = fh.read(self.header.descriptor_size * SECTOR_SIZE)
-                    self.descriptor = DiskDescriptor.parse(descriptor_buf.split(b"\x00", 1)[0].decode())
+                    self.descriptor = DiskDescriptor.parse_bytes(descriptor_buf.split(b"\x00", 1)[0])
 
             elif self.header.magic == COWD_MAGIC:
                 self._grain_directory_size = self.header.num_grain_directory_entries
@@ -452,6 +452,16 @@ class DiskDescriptor:
         self.ddb = disk_db
         self.sectors = sectors
         self.raw = raw_config
+
+    @classmethod
+    def parse_bytes(cls, vmdk_config: bytes) -> DiskDescriptor:
+        descriptor = cls.parse(vmdk_config.decode(errors="replace"))
+        if encoding := descriptor.attr.get("encoding"):
+            try:
+                descriptor = cls.parse(vmdk_config.decode(encoding))
+            except (LookupError, UnicodeDecodeError):
+                pass
+        return descriptor
 
     @classmethod
     def parse(cls, vmdk_config: str) -> DiskDescriptor:
