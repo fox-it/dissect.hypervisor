@@ -30,6 +30,27 @@ def test_vmdk_sesparse() -> None:
         assert vmdk.read(0x1000000) == b"a" * 0x1000000
 
 
+def test_vmdk_descriptor_declared_encoding(tmp_path: Path) -> None:
+    extent_name = "CentOS 64 副本-flat.vmdk"
+    descriptor_path = tmp_path / "disk.vmdk"
+    (tmp_path / extent_name).write_bytes(b"\x00" * 512)
+    descriptor_path.write_bytes(
+        (
+            "# Disk DescriptorFile\n"
+            "version=1\n"
+            'encoding="GBK"\n'
+            "CID=369b13fd\n"
+            "parentCID=ffffffff\n"
+            f'RW 1 FLAT "{extent_name}" 0\n'
+        ).encode("gbk")
+    )
+
+    vmdk = VMDK(descriptor_path)
+
+    assert vmdk.descriptor.extents[0].filename == extent_name
+    assert vmdk.size == 512
+
+
 @pytest.mark.parametrize(
     ("extent_description", "expected_extents"),
     [
