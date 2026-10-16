@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import gzip
+import io
+import struct
 from uuid import UUID
 
 import pytest
@@ -108,3 +110,77 @@ def test_vhdx_differencing() -> None:
 )
 def test_vhdx_partial_runs(test_input: tuple[bytes, int, int], expected: list[tuple[int, int]]) -> None:
     assert list(_iter_partial_runs(*test_input)) == expected
+
+
+def _patched_fixed_vhdx(bat_changes: dict[int, tuple[int, int | None]]) -> tuple[VHDX, list[bytes]]:
+    """Return the fixed test VHDX with a distinct fill pattern per payload block and a modified BAT.
+
+    Args:
+        bat_changes: Maps a block number to a tuple of the new payload block state and the block whose payload
+            the entry should point to, or ``None`` to keep the block's own payload.
+
+    Returns:
+        The patched VHDX and the expected content of every virtual block.
+    """
+    with gzip.open(absolute_path("_data/disk/vhdx/fixed.vhdx.gz"), "rb") as fh:
+        buf = bytearray(fh.read())
+
+    vhdx = VHDX(io.BytesIO(bytes(buf)))
+    block_size = vhdx.block_size
+    entries = [vhdx.bat.pb(block) for block in range(vhdx.bat._pb_count)]
+    patterns = [bytes([0x11 * (block + 1)]) * block_size for block in range(len(entries))]
+
+    # Give every payload block a recognizable content
+    for block, entry in enumerate(entries):
+        offset = entry.file_offset_mb * 1024 * 1024
+        buf[offset : offset + block_size] = patterns[block]
+
+    expected = list(patterns)
+    for block, (state, source) in bat_changes.items():
+        file_offset_mb = entries[block if source is None else source].file_offset_mb
+        value = state | (file_offset_mb << 20)
+        struct.pack_into("<Q", buf, vhdx.bat.offset + (block + block // vhdx.bat.chunk_ratio) * 8, value)
+
+        if state == c_vhdx.PAYLOAD_BLOCK_FULLY_PRESENT:
+            expected[block] = patterns[block if source is None else source]
+        else:
+            expected[block] = b"\x00" * block_size
+
+    return VHDX(io.BytesIO(bytes(buf))), expected
+
+
+@pytest.mark.parametrize(
+    "bat_changes",
+    [
+        pytest.param({}, id="contiguous"),
+        pytest.param({1: (c_vhdx.PAYLOAD_BLOCK_ZERO, None)}, id="present-to-zero"),
+        pytest.param({0: (c_vhdx.PAYLOAD_BLOCK_ZERO, None)}, id="zero-to-present"),
+        pytest.param({1: (c_vhdx.PAYLOAD_BLOCK_NOT_PRESENT, None)}, id="not-present"),
+        pytest.param(
+            {
+                1: (c_vhdx.PAYLOAD_BLOCK_FULLY_PRESENT, 2),
+                2: (c_vhdx.PAYLOAD_BLOCK_FULLY_PRESENT, 1),
+            },
+            id="non-contiguous-payload",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    ("offset", "length"),
+    [
+        (0, None),  # everything in one read
+        (0x200000 - 512, 1024),  # straddle a single block boundary
+        (0x100000, 0x300000),  # start mid-block, span multiple blocks
+    ],
+)
+def test_vhdx_read_across_block_boundaries(
+    bat_changes: dict[int, tuple[int, int | None]], offset: int, length: int | None
+) -> None:
+    """Test reads crossing block boundaries next to zero, absent and non-contiguous payload blocks."""
+    vhdx, expected = _patched_fixed_vhdx(bat_changes)
+    expected_data = b"".join(expected)
+    length = len(expected_data) - offset if length is None else length
+
+    vhdx.seek(offset)
+    assert vhdx.read(length) == expected_data[offset : offset + length]
+    assert vhdx.read_sectors(offset // 512, length // 512) == expected_data[offset : offset + length]

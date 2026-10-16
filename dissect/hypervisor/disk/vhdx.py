@@ -108,9 +108,10 @@ class VHDX(AlignedStream):
         sectors_read = []
 
         while count > 0:
-            read_count = min(count, self._sectors_per_block)
-            read_size = read_count * self.sector_size
             block, sector_in_block = divmod(sector, self._sectors_per_block)
+            # Never read past the end of the current block, the next block may live elsewhere (or nowhere) in the file
+            read_count = min(count, self._sectors_per_block - sector_in_block)
+            read_size = read_count * self.sector_size
             bat_entry = self.bat.pb(block)
 
             if bat_entry.state == c_vhdx.PAYLOAD_BLOCK_NOT_PRESENT:
